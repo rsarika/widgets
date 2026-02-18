@@ -6,6 +6,7 @@ import {USER_SETS} from './playwright/test-data';
 dotenv.config({path: path.resolve(__dirname, '.env')});
 
 const dummyAudioPath = path.resolve(__dirname, './playwright/wav/dummyAudio.wav');
+const skipOAuth = false; // Set to true to skip OAuth tests and dependencies, useful for local development without OAuth setup
 
 export default defineConfig({
   testDir: './playwright',
@@ -26,15 +27,19 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    {
-      name: 'OAuth: Get Access Token',
-      testMatch: /global\.setup\.ts/,
-    },
+    ...(!skipOAuth
+      ? [
+          {
+            name: 'OAuth: Get Access Token',
+            testMatch: /global\.setup\.ts/,
+          },
+        ]
+      : []),
     // Dynamically generate test projects from USER_SETS
     ...Object.entries(USER_SETS).map(([setName, setData], index) => {
       return {
         name: setName,
-        dependencies: ['OAuth: Get Access Token'],
+        dependencies: skipOAuth ? [] : ['OAuth: Get Access Token'],
         fullyParallel: false,
         retries: 1,
         testMatch: [`**/suites/${setData.TEST_SUITE}`],

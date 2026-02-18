@@ -47,6 +47,13 @@ interface EnvTokens {
   dialNumberLoginAccessToken?: string;
 }
 
+interface ConferenceEnvTokens {
+  agent1AccessToken: string;
+  agent2AccessToken: string;
+  agent3AccessToken: string;
+  agent4AccessToken: string;
+}
+
 // Context creation result interface
 interface ContextCreationResult {
   context: BrowserContext;
@@ -67,6 +74,14 @@ export class TestManager {
   // Agent 2 main widget page (Agent 2 login)
   public agent2Page: Page;
   public agent2Context: BrowserContext;
+
+  // Agent 3 main widget page (Conference suites)
+  public agent3Page: Page;
+  public agent3Context: BrowserContext;
+
+  // Agent 4 main widget page (Conference suites)
+  public agent4Page: Page;
+  public agent4Context: BrowserContext;
 
   // Caller extension page (Agent 2 for making calls)
   public callerPage: Page;
@@ -105,6 +120,15 @@ export class TestManager {
       agent1ExtensionNumber: process.env[`${this.projectName}_AGENT1_EXTENSION_NUMBER`] ?? '',
       password: process.env.PW_SANDBOX_PASSWORD ?? '',
       dialNumberLoginAccessToken: process.env.DIAL_NUMBER_LOGIN_ACCESS_TOKEN ?? '',
+    };
+  }
+
+  private getConferenceEnvTokens(): ConferenceEnvTokens {
+    return {
+      agent1AccessToken: process.env[`${this.projectName}_AGENT1_ACCESS_TOKEN`] ?? '',
+      agent2AccessToken: process.env[`${this.projectName}_AGENT2_ACCESS_TOKEN`] ?? '',
+      agent3AccessToken: process.env[`${this.projectName}_AGENT3_ACCESS_TOKEN`] ?? '',
+      agent4AccessToken: process.env[`${this.projectName}_AGENT4_ACCESS_TOKEN`] ?? '',
     };
   }
 
@@ -421,6 +445,49 @@ export class TestManager {
     });
   }
 
+  async setupForConferenceDesktop(browser: Browser): Promise<void> {
+    const tokens = this.getConferenceEnvTokens();
+    const missingTokens = Object.entries(tokens)
+      .filter(([, token]) => !token)
+      .map(([tokenName]) => tokenName);
+
+    if (missingTokens.length > 0) {
+      throw new Error(
+        `Missing required conference access tokens for ${this.projectName}: ${missingTokens.join(', ')}`
+      );
+    }
+
+    const contexts = await Promise.all([
+      browser.newContext({ignoreHTTPSErrors: true}),
+      browser.newContext({ignoreHTTPSErrors: true}),
+      browser.newContext({ignoreHTTPSErrors: true}),
+      browser.newContext({ignoreHTTPSErrors: true}),
+      browser.newContext({ignoreHTTPSErrors: true}),
+    ]);
+
+    [this.agent1Context, this.agent2Context, this.agent3Context, this.agent4Context, this.callerExtensionContext] = contexts;
+
+    const pages = await Promise.all(contexts.map((context) => context.newPage()));
+    [this.agent1Page, this.agent2Page, this.agent3Page, this.agent4Page, this.callerPage] = pages;
+
+    this.consoleMessages = [];
+    this.setupPageConsoleLogging(this.agent1Page, true);
+    this.setupPageConsoleLogging(this.agent2Page, true);
+    this.setupPageConsoleLogging(this.agent3Page, true);
+    this.setupPageConsoleLogging(this.agent4Page, true);
+
+    await Promise.all([
+      pageSetup(this.agent1Page, LOGIN_MODE.DESKTOP, tokens.agent1AccessToken),
+      pageSetup(this.agent2Page, LOGIN_MODE.DESKTOP, tokens.agent2AccessToken),
+      pageSetup(this.agent3Page, LOGIN_MODE.DESKTOP, tokens.agent3AccessToken),
+      pageSetup(this.agent4Page, LOGIN_MODE.DESKTOP, tokens.agent4AccessToken),
+      this.retryOperation(
+        () => loginExtension(this.callerPage, tokens.agent4AccessToken),
+        `${this.projectName} conference caller extension login`
+      ),
+    ]);
+  }
+
   async setupForStationLogin(browser: Browser, isDesktopMode: boolean = false): Promise<void> {
     const envTokens = this.getEnvTokens();
 
@@ -559,6 +626,12 @@ export class TestManager {
     if (this.agent2Page) {
       cleanupOps.push(handleStrayTasks(this.agent2Page));
     }
+    if (this.agent3Page) {
+      cleanupOps.push(handleStrayTasks(this.agent3Page));
+    }
+    if (this.agent4Page) {
+      cleanupOps.push(handleStrayTasks(this.agent4Page));
+    }
 
     await Promise.all(cleanupOps);
   }
@@ -581,6 +654,12 @@ export class TestManager {
     if (this.agent2Page && (await this.isLogoutButtonVisible(this.agent2Page))) {
       logoutOperations.push(stationLogout(this.agent2Page, false)); // Don't throw during cleanup
     }
+    if (this.agent3Page && (await this.isLogoutButtonVisible(this.agent3Page))) {
+      logoutOperations.push(stationLogout(this.agent3Page, false)); // Don't throw during cleanup
+    }
+    if (this.agent4Page && (await this.isLogoutButtonVisible(this.agent4Page))) {
+      logoutOperations.push(stationLogout(this.agent4Page, false)); // Don't throw during cleanup
+    }
 
     await Promise.all(logoutOperations);
 
@@ -592,6 +671,8 @@ export class TestManager {
       this.agent1Page,
       this.multiSessionAgent1Page,
       this.agent2Page,
+      this.agent3Page,
+      this.agent4Page,
       this.callerPage,
       this.agent1ExtensionPage,
       this.chatPage,
@@ -609,6 +690,8 @@ export class TestManager {
       this.agent1Context,
       this.multiSessionContext,
       this.agent2Context,
+      this.agent3Context,
+      this.agent4Context,
       this.callerExtensionContext,
       this.extensionContext,
       this.chatContext,
