@@ -135,6 +135,8 @@ Page types are defined in `PAGE_TYPES` constant (see Constants section).
 - `<SET>_<AGENT>_ACCESS_TOKEN`
 - `DIAL_NUMBER_LOGIN_ACCESS_TOKEN` (if dial-number credentials are provided)
 
+OAuth token acquisition is split into per-set setup tests under the `OAuth: Get Access Token` project (`OAuth for SET_1` ... `OAuth for SET_8`, plus dial-number setup when configured). These setup tests run in serial mode to avoid concurrent `.env` write races while giving each set its own timeout budget.
+
 ---
 
 ## Constants and Shared Types

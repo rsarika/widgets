@@ -180,6 +180,13 @@ Common env keys used by the framework:
 
 `playwright/global.setup.ts` expands set-scoped env keys and writes access tokens into `.env`.
 
+OAuth setup now runs as multiple setup tests inside the `OAuth: Get Access Token` project:
+
+- `OAuth for SET_1` ... `OAuth for SET_8`
+- `OAuth for DIAL_NUMBER_LOGIN` (when dial credentials are present)
+
+This split reduces timeout risk versus one monolithic token-setup test.
+
 ---
 
 ## Documentation Rules
@@ -199,4 +206,4 @@ When Playwright behavior changes:
 
 ---
 
-_Last Updated: 2026-02-18_
+_Last Updated: 2026-02-23_
