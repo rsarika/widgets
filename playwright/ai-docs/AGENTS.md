@@ -5,6 +5,7 @@
 The `playwright` directory contains the end-to-end testing framework for Contact Center widgets in this monorepo.
 
 It provides:
+
 - Project/set-driven execution from `playwright/test-data.ts`
 - Reusable setup/cleanup orchestration via `TestManager`
 - Shared flow utilities under `playwright/Utils/`
@@ -17,6 +18,7 @@ It provides:
 ## Why This Exists
 
 This framework validates real widget behavior for:
+
 - Station login
 - User state transitions
 - Incoming telephony/chat/email tasks
@@ -53,6 +55,8 @@ From `playwright/test-data.ts`:
 - `SET_4` -> `basic-advanced-task-controls-tests.spec.ts`
 - `SET_5` -> `advanced-task-controls-tests.spec.ts`
 - `SET_6` -> `dial-number-tests.spec.ts`
+- `SET_7` -> `conference-mpc-transfer-tests.spec.ts`
+- `SET_8` -> `conference-switch-tests.spec.ts`
 
 ---
 
@@ -97,6 +101,7 @@ yarn test:e2e --project=SET_3
 ### 4. Update Shared Behavior
 
 Prefer reusable changes in:
+
 - `playwright/Utils/*.ts`
 - `playwright/test-manager.ts`
 - `playwright/constants.ts`
@@ -116,6 +121,7 @@ Primary setup helpers in `playwright/test-manager.ts`:
 - `setupForAdvancedTaskControls`
 - `setupForAdvancedCombinations`
 - `setupForDialNumber`
+- `setupForConferenceDesktop`
 - `setupMultiSessionPage`
 - `softCleanup`
 - `cleanup`
@@ -149,6 +155,7 @@ All convenience methods (`basicSetup`, `setupForAdvancedTaskControls`, etc.) int
 
 ## Key Utility Modules
 
+- `Utils/conferenceUtils.ts`
 - `Utils/initUtils.ts`
 - `Utils/stationLoginUtils.ts`
 - `Utils/userStateUtils.ts`
@@ -167,7 +174,7 @@ Common env keys used by the framework:
 - `PW_SANDBOX`
 - `PW_SANDBOX_PASSWORD`
 - `PW_CHAT_URL`
-- `PW_ENTRY_POINT1..PW_ENTRY_POINT6` (and additional as needed)
+- `PW_ENTRY_POINT1..PW_ENTRY_POINT8` (and additional as needed)
 - `PW_DIAL_NUMBER_LOGIN_USERNAME` / `PW_DIAL_NUMBER_LOGIN_PASSWORD` (dial-number flows)
 - `DIAL_NUMBER_LOGIN_ACCESS_TOKEN` (dial-number access token)
 

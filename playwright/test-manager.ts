@@ -83,7 +83,7 @@ export class TestManager {
   public agent4Page: Page;
   public agent4Context: BrowserContext;
 
-  // Caller extension page (Agent 2 for making calls)
+  // Caller extension page (conference caller flow uses Agent 4 token)
   public callerPage: Page;
   public callerExtensionContext: BrowserContext;
 
@@ -452,9 +452,7 @@ export class TestManager {
       .map(([tokenName]) => tokenName);
 
     if (missingTokens.length > 0) {
-      throw new Error(
-        `Missing required conference access tokens for ${this.projectName}: ${missingTokens.join(', ')}`
-      );
+      throw new Error(`Missing required conference access tokens for ${this.projectName}: ${missingTokens.join(', ')}`);
     }
 
     const contexts = await Promise.all([
@@ -465,7 +463,8 @@ export class TestManager {
       browser.newContext({ignoreHTTPSErrors: true}),
     ]);
 
-    [this.agent1Context, this.agent2Context, this.agent3Context, this.agent4Context, this.callerExtensionContext] = contexts;
+    [this.agent1Context, this.agent2Context, this.agent3Context, this.agent4Context, this.callerExtensionContext] =
+      contexts;
 
     const pages = await Promise.all(contexts.map((context) => context.newPage()));
     [this.agent1Page, this.agent2Page, this.agent3Page, this.agent4Page, this.callerPage] = pages;

@@ -36,12 +36,15 @@ Use one or more values from:
 ## Current Set-to-Suite Mapping
 
 From `playwright/test-data.ts`:
+
 - `SET_1` -> `digital-incoming-task-tests.spec.ts`
 - `SET_2` -> `task-list-multi-session-tests.spec.ts`
 - `SET_3` -> `station-login-user-state-tests.spec.ts`
 - `SET_4` -> `basic-advanced-task-controls-tests.spec.ts`
 - `SET_5` -> `advanced-task-controls-tests.spec.ts`
 - `SET_6` -> `dial-number-tests.spec.ts`
+- `SET_7` -> `conference-mpc-transfer-tests.spec.ts`
+- `SET_8` -> `conference-switch-tests.spec.ts`
 
 ---
 

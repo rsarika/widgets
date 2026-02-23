@@ -6,7 +6,7 @@ import {USER_SETS} from './playwright/test-data';
 dotenv.config({path: path.resolve(__dirname, '.env')});
 
 const dummyAudioPath = path.resolve(__dirname, './playwright/wav/dummyAudio.wav');
-const skipOAuth = false; // Set to true to skip OAuth tests and dependencies, useful for local development without OAuth setup
+const skipOAuth = process.env.PW_SKIP_OAUTH === 'true';
 
 export default defineConfig({
   testDir: './playwright',

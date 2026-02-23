@@ -7,6 +7,8 @@ playwright/
 ├── suites/
 │   ├── advanced-task-controls-tests.spec.ts
 │   ├── basic-advanced-task-controls-tests.spec.ts
+│   ├── conference-mpc-transfer-tests.spec.ts
+│   ├── conference-switch-tests.spec.ts
 │   ├── dial-number-tests.spec.ts
 │   ├── digital-incoming-task-tests.spec.ts
 │   ├── station-login-user-state-tests.spec.ts
@@ -15,6 +17,7 @@ playwright/
 │   ├── advance-task-control-combinations-test.spec.ts
 │   ├── advanced-task-controls-test.spec.ts
 │   ├── basic-task-controls-test.spec.ts
+│   ├── conference-transfer-switch-test.spec.ts
 │   ├── dial-number-task-control-test.spec.ts
 │   ├── digital-incoming-task-and-task-controls.spec.ts
 │   ├── incoming-task-and-controls-multi-session.spec.ts
@@ -24,6 +27,7 @@ playwright/
 │   └── user-state-test.spec.ts
 ├── Utils/
 │   ├── advancedTaskControlUtils.ts
+│   ├── conferenceUtils.ts
 │   ├── helperUtils.ts
 │   ├── incomingTaskUtils.ts
 │   ├── initUtils.ts
@@ -69,6 +73,7 @@ Playwright Project(Set)
 `playwright.config.ts` dynamically builds projects by iterating `USER_SETS`.
 
 Key properties derived from each set:
+
 - project `name` = set key (`SET_X`)
 - project `testMatch` = `**/suites/${TEST_SUITE}`
 - worker count = `Object.keys(USER_SETS).length`
@@ -80,6 +85,7 @@ This avoids manual per-project duplication in config.
 ## TestManager Architecture
 
 `TestManager` manages page/context lifecycle for:
+
 - Agent1 / Agent2 pages
 - Caller page
 - Extension page
@@ -100,6 +106,7 @@ Page types are defined in `PAGE_TYPES` constant (see Constants section).
 - `setupForAdvancedTaskControls`
 - `setupForAdvancedCombinations`
 - `setupForDialNumber`
+- `setupForConferenceDesktop`
 - `setupMultiSessionPage`
 
 ### Cleanup entrypoints
@@ -114,6 +121,7 @@ Page types are defined in `PAGE_TYPES` constant (see Constants section).
 `playwright/global.setup.ts` performs two responsibilities:
 
 1. Expand `USER_SETS` into set-scoped `.env` variables:
+
 - `<SET>_<AGENT>_USERNAME`
 - `<SET>_<AGENT>_EXTENSION_NUMBER`
 - `<SET>_<AGENT>_NAME`
@@ -123,6 +131,7 @@ Page types are defined in `PAGE_TYPES` constant (see Constants section).
 - `<SET>_CHAT_URL`
 
 2. Acquire and persist access tokens:
+
 - `<SET>_<AGENT>_ACCESS_TOKEN`
 - `DIAL_NUMBER_LOGIN_ACCESS_TOKEN` (if dial-number credentials are provided)
 
@@ -131,6 +140,7 @@ Page types are defined in `PAGE_TYPES` constant (see Constants section).
 ## Constants and Shared Types
 
 `playwright/constants.ts` centralizes:
+
 - Base configuration (`BASE_URL`, `CALL_URL`)
 - User states (`USER_STATES`)
 - Theme colors (`THEME_COLORS`)
@@ -150,8 +160,11 @@ Tests should consume these constants rather than hardcoding values.
 ## Page Type System
 
 `PAGE_TYPES` constant defines type-safe identifiers for all managed pages:
+
 - `AGENT1` - Main agent desktop/extension page
 - `AGENT2` - Second agent page (for multi-agent scenarios)
+- `AGENT3` - Third agent page (conference scenarios)
+- `AGENT4` - Fourth agent page (conference scenarios)
 - `CALLER` - Extension page for making calls
 - `EXTENSION` - Agent1 extension login page
 - `CHAT` - Chat widget page
@@ -165,6 +178,7 @@ These types ensure consistency across `TestManager` context creation and page ma
 ## Stability Patterns
 
 Common anti-flake patterns in the current framework:
+
 - deterministic setup via `TestManager` convenience methods
 - pre-test cleanup via `handleStrayTasks` where needed
 - explicit state checks (`verifyCurrentState`, `waitForState`)
@@ -173,17 +187,32 @@ Common anti-flake patterns in the current framework:
 
 ---
 
-## Conference Transfer/Switch Notes (Merged from prior spec)
+## Conference Transfer/Switch Notes
 
-Existing documentation captured a conference transfer/switch plan with:
-- desktop-only scope
+Conference automation is implemented through:
+
+- `playwright/suites/conference-mpc-transfer-tests.spec.ts` (SET_7)
+- `playwright/suites/conference-switch-tests.spec.ts` (SET_8)
+- `playwright/tests/conference-transfer-switch-test.spec.ts`
+
+Current documented scope includes:
+
+- desktop-only conference flows
 - explicit out-of-scope cases (`EP_DN`, >4 agents)
 - skip/todo IDs (`TC-14`, `TC-17`, `TC-18`, `TC-19`, `TC-20`)
-- guidance for retries, timeout tuning, and bounded cleanup
+- merge readiness checks (visible + enabled) before conference merge actions
 
-Important alignment note:
-- those conference suite/test files are not present in the current `playwright/suites/` and `playwright/tests/` tree at the time of this update.
-- if conference automation is (re)introduced, it should follow current `USER_SETS` + suite mapping + `TestManager` patterns documented above.
+### Conference helper responsibilities
+
+`playwright/Utils/conferenceUtils.ts` centralizes reusable conference-only helpers to keep suite files lean and consistent:
+
+- environment guard helpers (`getRequiredEnvValue`)
+- multi-agent state setup helpers (`setAgentState`, `ensureAgentsIdle`)
+- bounded cleanup helper (`safeHandleStrayTasks`)
+- wrapup safety helper (`submitWrapupIfVisible`)
+- merge button readiness helper (`clickMergeWhenReady`)
+
+Tests should consume these helpers rather than re-implementing similar logic in each conference scenario file.
 
 ---
 
@@ -217,4 +246,4 @@ Important alignment note:
 
 ---
 
-_Last Updated: 2026-02-18_
+_Last Updated: 2026-02-23_
