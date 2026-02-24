@@ -1,6 +1,6 @@
 import {test} from '@playwright/test';
 import createConferenceTransferSwitchTests from '../tests/conference-transfer-switch-test.spec';
 
-const createConferenceTransferAndSwitchTests = () => createConferenceTransferSwitchTests('transfer-switch');
+const createConferenceBalancedSet9Tests = () => createConferenceTransferSwitchTests('balanced-set9');
 
-test.describe('Conference Transfer and Switch Tests', createConferenceTransferAndSwitchTests);
+test.describe('Conference Balanced SET_9 Tests', createConferenceBalancedSet9Tests);

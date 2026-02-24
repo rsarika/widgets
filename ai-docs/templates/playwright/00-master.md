@@ -44,7 +44,8 @@ From `playwright/test-data.ts`:
 - `SET_5` -> `advanced-task-controls-tests.spec.ts`
 - `SET_6` -> `dial-number-tests.spec.ts`
 - `SET_7` -> `conference-mpc-transfer-tests.spec.ts`
-- `SET_8` -> `conference-switch-tests.spec.ts`
+- `SET_8` -> `conference-transfer-tests.spec.ts`
+- `SET_9` -> `conference-switch-tests.spec.ts`
 
 ---
 

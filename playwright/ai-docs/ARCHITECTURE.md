@@ -8,6 +8,7 @@ playwright/
 │   ├── advanced-task-controls-tests.spec.ts
 │   ├── basic-advanced-task-controls-tests.spec.ts
 │   ├── conference-mpc-transfer-tests.spec.ts
+│   ├── conference-transfer-tests.spec.ts
 │   ├── conference-switch-tests.spec.ts
 │   ├── dial-number-tests.spec.ts
 │   ├── digital-incoming-task-tests.spec.ts
@@ -135,7 +136,7 @@ Page types are defined in `PAGE_TYPES` constant (see Constants section).
 - `<SET>_<AGENT>_ACCESS_TOKEN`
 - `DIAL_NUMBER_LOGIN_ACCESS_TOKEN` (if dial-number credentials are provided)
 
-OAuth token acquisition is split into per-set setup tests under the `OAuth: Get Access Token` project (`OAuth for SET_1` ... `OAuth for SET_8`, plus dial-number setup when configured). These setup tests run in serial mode to avoid concurrent `.env` write races while giving each set its own timeout budget.
+OAuth token acquisition is split into per-set setup tests under the `OAuth: Get Access Token` project (`OAuth for SET_1` ... `OAuth for SET_9`, plus dial-number setup when configured). These setup tests run in serial mode to avoid concurrent `.env` write races while giving each set its own timeout budget. Within each set, agent token fetches run in parallel and then `.env` writes are serialized.
 
 ---
 
@@ -194,8 +195,17 @@ Common anti-flake patterns in the current framework:
 Conference automation is implemented through:
 
 - `playwright/suites/conference-mpc-transfer-tests.spec.ts` (SET_7)
-- `playwright/suites/conference-switch-tests.spec.ts` (SET_8)
+- `playwright/suites/conference-transfer-tests.spec.ts` (SET_8)
+- `playwright/suites/conference-switch-tests.spec.ts` (SET_9)
 - `playwright/tests/conference-transfer-switch-test.spec.ts`
+
+Conference setup uses parallel desktop setup for Agent1-4 in `setupForConferenceDesktop` to reduce `beforeAll` startup time.
+
+Conference scenarios are balanced across the three sets by case ID to keep suite durations closer:
+
+- `SET_7`: `CTS-MPC-01..06`, `CTS-TC-01`, `CTS-SW-01..02`
+- `SET_8`: `CTS-MPC-07..11`, `CTS-TC-02..03`, `CTS-SW-03..04`
+- `SET_9`: `CTS-MPC-12..16`, `CTS-TC-04..05`, `CTS-SW-05`
 
 Current documented scope includes:
 
@@ -248,4 +258,4 @@ Tests should consume these helpers rather than re-implementing similar logic in 
 
 ---
 
-_Last Updated: 2026-02-23_
+_Last Updated: 2026-02-24_

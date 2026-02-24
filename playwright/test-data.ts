@@ -93,6 +93,19 @@ export const USER_SETS = {
     CHAT_URL: `${env.PW_CHAT_URL}-e2e-8.html`,
     EMAIL_ENTRY_POINT: `${env.PW_SANDBOX}.e2e8@gmail.com`,
     ENTRY_POINT: env.PW_ENTRY_POINT8,
+    TEST_SUITE: 'conference-transfer-tests.spec.ts',
+  },
+  SET_9: {
+    AGENTS: {
+      AGENT1: {username: 'user33', extension: '1033', agentName: 'User33 Agent33'},
+      AGENT2: {username: 'user34', extension: '1034', agentName: 'User34 Agent34'},
+      AGENT3: {username: 'user35', extension: '1035', agentName: 'User35 Agent35'},
+      AGENT4: {username: 'user36', extension: '1036', agentName: 'User36 Agent36'},
+    },
+    QUEUE_NAME: 'Queue e2e 9',
+    CHAT_URL: `${env.PW_CHAT_URL}-e2e-9.html`,
+    EMAIL_ENTRY_POINT: `${env.PW_SANDBOX}.e2e9@gmail.com`,
+    ENTRY_POINT: env.PW_ENTRY_POINT9,
     TEST_SUITE: 'conference-switch-tests.spec.ts',
   },
 };

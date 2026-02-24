@@ -14,14 +14,80 @@ import {
 } from '../Utils/conferenceUtils';
 import {ACCEPT_TASK_TIMEOUT, AWAIT_TIMEOUT, OPERATION_TIMEOUT, TASK_TYPES, USER_STATES} from '../constants';
 
-export type ConferenceSuiteGroup = 'all' | 'mpc' | 'transfer-switch' | 'mpc-transfer' | 'switch';
+type BalancedConferenceGroup = 'balanced-set7' | 'balanced-set8' | 'balanced-set9';
+export type ConferenceSuiteGroup =
+  | 'all'
+  | 'mpc'
+  | 'transfer'
+  | 'switch'
+  | 'transfer-switch'
+  | 'mpc-transfer'
+  | BalancedConferenceGroup;
 
 export default function createConferenceTransferSwitchTests(group: ConferenceSuiteGroup = 'all') {
   let testManager: TestManager;
 
-  const runMpc = group === 'all' || group === 'mpc' || group === 'mpc-transfer';
-  const runTransfer = group === 'all' || group === 'mpc-transfer' || group === 'transfer-switch';
-  const runSwitch = group === 'all' || group === 'switch' || group === 'transfer-switch';
+  const isBalancedGroup =
+    group === 'balanced-set7' || group === 'balanced-set8' || group === 'balanced-set9';
+
+  const runMpc = group === 'all' || group === 'mpc' || group === 'mpc-transfer' || isBalancedGroup;
+  const runTransfer =
+    group === 'all' || group === 'transfer' || group === 'mpc-transfer' || group === 'transfer-switch' || isBalancedGroup;
+  const runSwitch = group === 'all' || group === 'switch' || group === 'transfer-switch' || isBalancedGroup;
+
+  const BALANCED_CASE_ASSIGNMENT: Record<BalancedConferenceGroup, ReadonlySet<string>> = {
+    'balanced-set7': new Set([
+      'CTS-MPC-01',
+      'CTS-MPC-02',
+      'CTS-MPC-03',
+      'CTS-MPC-04',
+      'CTS-MPC-05',
+      'CTS-MPC-06',
+      'CTS-TC-01',
+      'CTS-SW-01',
+      'CTS-SW-02',
+    ]),
+    'balanced-set8': new Set([
+      'CTS-MPC-07',
+      'CTS-MPC-08',
+      'CTS-MPC-09',
+      'CTS-MPC-10',
+      'CTS-MPC-11',
+      'CTS-TC-02',
+      'CTS-TC-03',
+      'CTS-SW-03',
+      'CTS-SW-04',
+    ]),
+    'balanced-set9': new Set([
+      'CTS-MPC-12',
+      'CTS-MPC-13',
+      'CTS-MPC-14',
+      'CTS-MPC-15',
+      'CTS-MPC-16',
+      'CTS-TC-04',
+      'CTS-TC-05',
+      'CTS-SW-05',
+    ]),
+  };
+
+  const activeBalancedCaseIds = isBalancedGroup ? BALANCED_CASE_ASSIGNMENT[group as BalancedConferenceGroup] : null;
+  const hasCase = (caseId: string) => !activeBalancedCaseIds || activeBalancedCaseIds.has(caseId);
+  const getCaseId = (title: string) => title.split(' ')[0];
+  const caseTest = (title: string, body: () => Promise<void> | void) => {
+    if (hasCase(getCaseId(title))) {
+      test(title, body);
+    }
+  };
+  const caseSkip = (title: string, body: () => Promise<void> | void) => {
+    if (hasCase(getCaseId(title))) {
+      test.skip(title, body);
+    }
+  };
+  const caseFixme = (title: string, body: () => Promise<void> | void) => {
+    if (hasCase(getCaseId(title))) {
+      test.fixme(title, body);
+    }
+  };
 
   const getAgentNames = () => ({
     agent2Name: getRequiredEnvValue(`${testManager.projectName}_AGENT2_NAME`),
@@ -206,7 +272,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
   });
 
   if (runMpc) {
-    test('CTS-MPC-01 should create conference (A1 + A2 + customer) in desktop mode', async () => {
+    caseTest('CTS-MPC-01 should create conference (A1 + A2 + customer) in desktop mode', async () => {
       try {
         await createConferenceA1A2();
         await verifyCurrentState(testManager.agent1Page, USER_STATES.ENGAGED);
@@ -216,7 +282,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-02 should allow participant exit while owner stays engaged', async () => {
+    caseTest('CTS-MPC-02 should allow participant exit while owner stays engaged', async () => {
       try {
         await createConferenceA1A2();
         await exitConferenceAndWaitForAvailable(testManager.agent2Page);
@@ -227,7 +293,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-03 should keep conference active when owner exits and hand over to remaining participant', async () => {
+    caseTest('CTS-MPC-03 should keep conference active when owner exits and hand over to remaining participant', async () => {
       try {
         await createConferenceA1A2();
         await exitConferenceAndWaitForAvailable(testManager.agent1Page);
@@ -238,7 +304,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-04 should support 4-party conference path (A1 + A2 + A3 + customer)', async () => {
+    caseTest('CTS-MPC-04 should support 4-party conference path (A1 + A2 + A3 + customer)', async () => {
       test.setTimeout(180000);
       try {
         await createConferenceA1A2A3();
@@ -250,7 +316,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-05 should keep owner conference controls visible after merge', async () => {
+    caseTest('CTS-MPC-05 should keep owner conference controls visible after merge', async () => {
       try {
         await createConferenceA1A2();
         await expect(testManager.agent1Page.getByTestId('call-control:consult').first()).toBeVisible({
@@ -264,7 +330,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-06 should end conference from owner and return all agents to idle states', async () => {
+    caseTest('CTS-MPC-06 should end conference from owner and return all agents to idle states', async () => {
       try {
         await createConferenceA1A2();
         await endCallAndWrapup(testManager.agent1Page);
@@ -274,7 +340,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-07 should allow third agent to exit and preserve conference on remaining agents', async () => {
+    caseTest('CTS-MPC-07 should allow third agent to exit and preserve conference on remaining agents', async () => {
       try {
         await createConferenceA1A2A3();
         await exitConferenceAndWaitForAvailable(testManager.agent3Page);
@@ -285,7 +351,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-08 should preserve conference between A2 and A3 after A1 exits a 4-party flow', async () => {
+    caseTest('CTS-MPC-08 should preserve conference between A2 and A3 after A1 exits a 4-party flow', async () => {
       try {
         await createConferenceA1A2A3();
         await exitConferenceAndWaitForAvailable(testManager.agent1Page);
@@ -296,7 +362,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-09 should allow ownership handover agent to start consult and cancel it safely', async () => {
+    caseTest('CTS-MPC-09 should allow ownership handover agent to start consult and cancel it safely', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -310,7 +376,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-10 should keep conference stable after owner starts and cancels consult', async () => {
+    caseTest('CTS-MPC-10 should keep conference stable after owner starts and cancels consult', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -323,7 +389,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-11 should re-merge consult leg into conference without breaking existing participants', async () => {
+    caseTest('CTS-MPC-11 should re-merge consult leg into conference without breaking existing participants', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -337,7 +403,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-12 should allow post-handover participant to transfer consult leg to another agent', async () => {
+    caseTest('CTS-MPC-12 should allow post-handover participant to transfer consult leg to another agent', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -352,7 +418,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-13 should keep 4-party conference active when A2 exits', async () => {
+    caseTest('CTS-MPC-13 should keep 4-party conference active when A2 exits', async () => {
       try {
         await createConferenceA1A2A3();
         await exitConferenceAndWaitForAvailable(testManager.agent2Page);
@@ -363,7 +429,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-14 should end 4-party conference from owner and clear all agent states', async () => {
+    caseTest('CTS-MPC-14 should end 4-party conference from owner and clear all agent states', async () => {
       try {
         await createConferenceA1A2A3();
         await endCallAndWrapup(testManager.agent1Page);
@@ -374,7 +440,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-15 should keep consult and transfer controls available in 4-party conference', async () => {
+    caseTest('CTS-MPC-15 should keep consult and transfer controls available in 4-party conference', async () => {
       try {
         await createConferenceA1A2A3();
         await expect(testManager.agent1Page.getByTestId('call-control:consult').first()).toBeVisible({
@@ -388,7 +454,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-MPC-16 should allow handover participant to end conference cleanly', async () => {
+    caseTest('CTS-MPC-16 should allow handover participant to end conference cleanly', async () => {
       try {
         await createConferenceA1A2();
         await exitConferenceAndWaitForAvailable(testManager.agent1Page);
@@ -401,7 +467,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
   }
 
   if (runTransfer) {
-    test('CTS-TC-01 should transfer conference from owner to another agent', async () => {
+    caseTest('CTS-TC-01 should transfer conference from owner to another agent', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -419,7 +485,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-TC-02 should allow participant to consult-transfer after ownership handover', async () => {
+    caseTest('CTS-TC-02 should allow participant to consult-transfer after ownership handover', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -441,7 +507,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-TC-03 should complete transfer to target directly after consult accept', async () => {
+    caseTest('CTS-TC-03 should complete transfer to target directly after consult accept', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -454,7 +520,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-TC-04 should keep transfer path stable after switch-to-main and switch-back', async () => {
+    caseTest('CTS-TC-04 should keep transfer path stable after switch-to-main and switch-back', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -475,7 +541,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-TC-05 should transfer from handover participant after consult accept', async () => {
+    caseTest('CTS-TC-05 should transfer from handover participant after consult accept', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -490,15 +556,15 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test.skip('CTS-SKIP-TC14 consult/transfer with external DN', async () => {});
-    test.skip('CTS-SKIP-TC20 conference with 7 agents', async () => {});
-    test.fixme('CTS-TODO-TC17 transfer fails when target cannot join main conference', async () => {});
-    test.fixme('CTS-TODO-TC18 failure-path transfer scenario', async () => {});
-    test.fixme('CTS-TODO-TC19 oldest participant ownership fallback', async () => {});
+    caseSkip('CTS-SKIP-TC14 consult/transfer with external DN', async () => {});
+    caseSkip('CTS-SKIP-TC20 conference with 7 agents', async () => {});
+    caseFixme('CTS-TODO-TC17 transfer fails when target cannot join main conference', async () => {});
+    caseFixme('CTS-TODO-TC18 failure-path transfer scenario', async () => {});
+    caseFixme('CTS-TODO-TC19 oldest participant ownership fallback', async () => {});
   }
 
   if (runSwitch) {
-    test('CTS-SW-01 should switch from consult to main call and back in conference flow', async () => {
+    caseTest('CTS-SW-01 should switch from consult to main call and back in conference flow', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -524,7 +590,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-SW-02 should switch to main and then cancel consult safely', async () => {
+    caseTest('CTS-SW-02 should switch to main and then cancel consult safely', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -542,7 +608,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-SW-03 should support repeated switch toggles during consult leg', async () => {
+    caseTest('CTS-SW-03 should support repeated switch toggles during consult leg', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -564,7 +630,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-SW-04 should keep transfer stable after consult-main switch cycle', async () => {
+    caseTest('CTS-SW-04 should keep transfer stable after consult-main switch cycle', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
@@ -582,7 +648,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       }
     });
 
-    test('CTS-SW-05 should recover cleanly when consulted agent ends consult leg', async () => {
+    caseTest('CTS-SW-05 should recover cleanly when consulted agent ends consult leg', async () => {
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();

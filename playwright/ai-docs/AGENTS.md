@@ -56,7 +56,14 @@ From `playwright/test-data.ts`:
 - `SET_5` -> `advanced-task-controls-tests.spec.ts`
 - `SET_6` -> `dial-number-tests.spec.ts`
 - `SET_7` -> `conference-mpc-transfer-tests.spec.ts`
-- `SET_8` -> `conference-switch-tests.spec.ts`
+- `SET_8` -> `conference-transfer-tests.spec.ts`
+- `SET_9` -> `conference-switch-tests.spec.ts`
+
+Conference case routing is balanced in the shared conference factory to reduce total wall-clock time:
+
+- `SET_7`: `CTS-MPC-01..06`, `CTS-TC-01`, `CTS-SW-01..02`
+- `SET_8`: `CTS-MPC-07..11`, `CTS-TC-02..03`, `CTS-SW-03..04`
+- `SET_9`: `CTS-MPC-12..16`, `CTS-TC-04..05`, `CTS-SW-05`
 
 ---
 
@@ -174,7 +181,7 @@ Common env keys used by the framework:
 - `PW_SANDBOX`
 - `PW_SANDBOX_PASSWORD`
 - `PW_CHAT_URL`
-- `PW_ENTRY_POINT1..PW_ENTRY_POINT8` (and additional as needed)
+- `PW_ENTRY_POINT1..PW_ENTRY_POINT9` (and additional as needed)
 - `PW_DIAL_NUMBER_LOGIN_USERNAME` / `PW_DIAL_NUMBER_LOGIN_PASSWORD` (dial-number flows)
 - `DIAL_NUMBER_LOGIN_ACCESS_TOKEN` (dial-number access token)
 
@@ -182,7 +189,7 @@ Common env keys used by the framework:
 
 OAuth setup now runs as multiple setup tests inside the `OAuth: Get Access Token` project:
 
-- `OAuth for SET_1` ... `OAuth for SET_8`
+- `OAuth for SET_1` ... `OAuth for SET_9`
 - `OAuth for DIAL_NUMBER_LOGIN` (when dial credentials are present)
 
 This split reduces timeout risk versus one monolithic token-setup test.
@@ -206,4 +213,4 @@ When Playwright behavior changes:
 
 ---
 
-_Last Updated: 2026-02-23_
+_Last Updated: 2026-02-24_

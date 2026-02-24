@@ -475,24 +475,25 @@ export class TestManager {
     this.setupPageConsoleLogging(this.agent3Page, true);
     this.setupPageConsoleLogging(this.agent4Page, true);
 
-    // Conference setup is sensitive to parallel telephony login contention.
-    // Run agent setups sequentially with retries so one flaky login does not fail the whole beforeAll.
-    await this.retryOperation(
-      () => pageSetup(this.agent1Page, LOGIN_MODE.DESKTOP, tokens.agent1AccessToken),
-      `${this.projectName} conference agent1 setup`
-    );
-    await this.retryOperation(
-      () => pageSetup(this.agent2Page, LOGIN_MODE.DESKTOP, tokens.agent2AccessToken),
-      `${this.projectName} conference agent2 setup`
-    );
-    await this.retryOperation(
-      () => pageSetup(this.agent3Page, LOGIN_MODE.DESKTOP, tokens.agent3AccessToken),
-      `${this.projectName} conference agent3 setup`
-    );
-    await this.retryOperation(
-      () => pageSetup(this.agent4Page, LOGIN_MODE.DESKTOP, tokens.agent4AccessToken),
-      `${this.projectName} conference agent4 setup`
-    );
+    // Run conference desktop agent setups in parallel to reduce startup time per suite.
+    await Promise.all([
+      this.retryOperation(
+        () => pageSetup(this.agent1Page, LOGIN_MODE.DESKTOP, tokens.agent1AccessToken),
+        `${this.projectName} conference agent1 setup`
+      ),
+      this.retryOperation(
+        () => pageSetup(this.agent2Page, LOGIN_MODE.DESKTOP, tokens.agent2AccessToken),
+        `${this.projectName} conference agent2 setup`
+      ),
+      this.retryOperation(
+        () => pageSetup(this.agent3Page, LOGIN_MODE.DESKTOP, tokens.agent3AccessToken),
+        `${this.projectName} conference agent3 setup`
+      ),
+      this.retryOperation(
+        () => pageSetup(this.agent4Page, LOGIN_MODE.DESKTOP, tokens.agent4AccessToken),
+        `${this.projectName} conference agent4 setup`
+      ),
+    ]);
     await this.retryOperation(
       () => loginExtension(this.callerPage, tokens.agent4AccessToken),
       `${this.projectName} conference caller extension login`

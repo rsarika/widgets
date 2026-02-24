@@ -83,21 +83,28 @@ export const UpdateENVWithUserSets = () => {
 
 const setupAccessTokenForSet = async (browser: Browser, setKey: string) => {
   const userSet = USER_SETS[setKey];
+  const tokenResults = await Promise.all(
+    Object.keys(userSet.AGENTS).map(async (agentKey) => {
+      const page = await browser.newPage();
+      try {
+        // Construct the OAuth agent ID directly
+        const oauthAgentId = `${userSet.AGENTS[agentKey].username}@${process.env.PW_SANDBOX}`;
 
-  for (const agentKey of Object.keys(userSet.AGENTS)) {
-    const page = await browser.newPage();
+        await oauthLogin(page, oauthAgentId);
+        await page.getByRole('textbox').click();
+        const accessToken = await page.getByRole('textbox').inputValue();
 
-    // Construct the OAuth agent ID directly
-    const oauthAgentId = `${userSet.AGENTS[agentKey].username}@${process.env.PW_SANDBOX}`;
+        return {agentKey, accessToken};
+      } finally {
+        await page.close();
+      }
+    })
+  );
 
-    await oauthLogin(page, oauthAgentId);
-
-    await page.getByRole('textbox').click();
-    const accessToken = await page.getByRole('textbox').inputValue();
+  // Serialize .env writes to avoid race conditions.
+  tokenResults.forEach(({agentKey, accessToken}) => {
     upsertEnvKey(`${setKey}_${agentKey}_ACCESS_TOKEN`, accessToken);
-
-    await page.close();
-  }
+  });
 };
 
 setup.describe('OAuth', () => {
