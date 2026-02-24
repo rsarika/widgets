@@ -119,25 +119,34 @@ export async function waitForWebSocketReconnection(
  * ```
  */
 
-export const waitForState = async (page: Page, expectedState: userState): Promise<void> => {
+export const waitForState = async (
+  page: Page,
+  expectedState: userState,
+  timeoutMs: number = AWAIT_TIMEOUT
+): Promise<void> => {
   try {
     await page.bringToFront();
     await page.waitForFunction(
-      async (expectedStateArg) => {
-        // Re-import getCurrentState in the browser context
-        const stateSelect = document.querySelector('[data-test="state-select"]') as HTMLSelectElement;
-        if (!stateSelect) return false;
+      (expectedStateArg) => {
+        const stateName = document.querySelector(
+          '[data-testid="state-select"] [data-testid="state-name"]'
+        ) as HTMLElement | null;
+        if (!stateName) {
+          return false;
+        }
 
-        const currentState = stateSelect.value?.trim();
+        const currentState = stateName.textContent?.trim() || '';
         return currentState === expectedStateArg;
       },
       expectedState,
-      {timeout: 10000, polling: 'raf'} // Use requestAnimationFrame for optimal performance
+      {timeout: timeoutMs, polling: 'raf'} // Use requestAnimationFrame for optimal performance
     );
   } catch (error) {
     // Get current state for better error message
     const currentState = await getCurrentState(page);
-    throw new Error(`Timed out waiting for state "${expectedState}", last state was "${currentState}"`);
+    throw new Error(
+      `Timed out waiting for state "${expectedState}" within ${timeoutMs}ms, last state was "${currentState}"`
+    );
   }
 };
 

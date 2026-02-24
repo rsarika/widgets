@@ -333,46 +333,119 @@ export function verifyEndLogs(): void {
  */
 export async function verifyRemoteAudioTracks(page: Page): Promise<void> {
   try {
-    // Execute the exact console command for audio tracks
-    const consoleResult = await page.evaluate(() => {
-      // This is the exact command from your console
+    // Execute the exact console command for audio tracks and wait for unmute.
+    const consoleResult = await page.evaluate(async ({timeoutMs, pollMs}: {timeoutMs: number; pollMs: number}) => {
       const audioElem = document.querySelector('#remote-audio') as HTMLAudioElement;
 
       if (!audioElem) {
-        return [];
+        return {
+          audioElementFound: false,
+          hasSrcObject: false,
+          trackCount: 0,
+          unmuted: false,
+          track: null,
+        };
       }
 
       if (!audioElem.srcObject) {
-        return [];
+        return {
+          audioElementFound: true,
+          hasSrcObject: false,
+          trackCount: 0,
+          unmuted: false,
+          track: null,
+        };
       }
 
       const mediaStream = audioElem.srcObject as MediaStream;
       const audioTracks = mediaStream.getAudioTracks();
+      const audioTrack = audioTracks[0] ?? null;
 
-      // Convert MediaStreamTrack objects to serializable format (like console shows)
-      const result = audioTracks.map((track, index) => {
+      if (!audioTrack) {
         return {
-          index,
-          kind: track.kind,
-          id: track.id,
-          label: track.label,
-          enabled: track.enabled,
-          muted: track.muted,
-          readyState: track.readyState,
-          onended: track.onended,
-          onmute: track.onmute,
-          onunmute: track.onunmute,
+          audioElementFound: true,
+          hasSrcObject: true,
+          trackCount: 0,
+          unmuted: false,
+          track: null,
         };
-      });
+      }
 
-      return result;
-    });
+      // Ensure playback attempt is made before we wait for unmute.
+      if (audioElem.paused) {
+        try {
+          await audioElem.play();
+        } catch {
+          // Ignore autoplay/play errors; we'll still validate track state below.
+        }
+      }
 
+      let unmuted = !audioTrack.muted;
+
+      if (!unmuted) {
+        await new Promise<void>((resolve) => {
+          let resolved = false;
+          const finalize = () => {
+            if (resolved) {
+              return;
+            }
+            resolved = true;
+            audioTrack.removeEventListener('unmute', onUnmute);
+            window.clearInterval(pollInterval);
+            window.clearTimeout(timeout);
+            resolve();
+          };
+
+          const onUnmute = () => {
+            unmuted = true;
+            finalize();
+          };
+
+          audioTrack.addEventListener('unmute', onUnmute, {once: true});
+
+          const pollInterval = window.setInterval(() => {
+            if (!audioTrack.muted) {
+              unmuted = true;
+              finalize();
+            }
+          }, pollMs);
+
+          const timeout = window.setTimeout(() => {
+            finalize();
+          }, timeoutMs);
+        });
+      }
+
+      return {
+        audioElementFound: true,
+        hasSrcObject: true,
+        trackCount: audioTracks.length,
+        unmuted,
+        track: {
+          kind: audioTrack.kind,
+          id: audioTrack.id,
+          label: audioTrack.label,
+          enabled: audioTrack.enabled,
+          muted: audioTrack.muted,
+          readyState: audioTrack.readyState,
+        },
+      };
+    }, {timeoutMs: 10000, pollMs: 200});
+
+    expect(consoleResult.audioElementFound).toBe(true);
+    expect(consoleResult.hasSrcObject).toBe(true);
     // Verify we got exactly 1 audio track (no more, no less)
-    expect(consoleResult.length).toBe(1);
+    expect(consoleResult.trackCount).toBe(1);
+    expect(consoleResult.track).not.toBeNull();
 
-    // Get the single audio track (since we verified there's exactly 1)
-    const audioTrack = consoleResult[0];
+    const audioTrack = consoleResult.track as {
+      kind: string;
+      id: string;
+      label: string;
+      enabled: boolean;
+      muted: boolean;
+      readyState: string;
+    };
 
     // Verify it's an audio track
     if (audioTrack.kind !== 'audio') {
@@ -384,6 +457,7 @@ export async function verifyRemoteAudioTracks(page: Page): Promise<void> {
     // Verify essential track properties for audio transfer
     expect(audioTrack.kind).toBe('audio');
     expect(audioTrack.enabled).toBe(true);
+    expect(consoleResult.unmuted).toBe(true);
     expect(audioTrack.muted).toBe(false);
     expect(audioTrack.readyState).toBe('live');
   } catch (error) {

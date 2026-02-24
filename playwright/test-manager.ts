@@ -475,16 +475,28 @@ export class TestManager {
     this.setupPageConsoleLogging(this.agent3Page, true);
     this.setupPageConsoleLogging(this.agent4Page, true);
 
-    await Promise.all([
-      pageSetup(this.agent1Page, LOGIN_MODE.DESKTOP, tokens.agent1AccessToken),
-      pageSetup(this.agent2Page, LOGIN_MODE.DESKTOP, tokens.agent2AccessToken),
-      pageSetup(this.agent3Page, LOGIN_MODE.DESKTOP, tokens.agent3AccessToken),
-      pageSetup(this.agent4Page, LOGIN_MODE.DESKTOP, tokens.agent4AccessToken),
-      this.retryOperation(
-        () => loginExtension(this.callerPage, tokens.agent4AccessToken),
-        `${this.projectName} conference caller extension login`
-      ),
-    ]);
+    // Conference setup is sensitive to parallel telephony login contention.
+    // Run agent setups sequentially with retries so one flaky login does not fail the whole beforeAll.
+    await this.retryOperation(
+      () => pageSetup(this.agent1Page, LOGIN_MODE.DESKTOP, tokens.agent1AccessToken),
+      `${this.projectName} conference agent1 setup`
+    );
+    await this.retryOperation(
+      () => pageSetup(this.agent2Page, LOGIN_MODE.DESKTOP, tokens.agent2AccessToken),
+      `${this.projectName} conference agent2 setup`
+    );
+    await this.retryOperation(
+      () => pageSetup(this.agent3Page, LOGIN_MODE.DESKTOP, tokens.agent3AccessToken),
+      `${this.projectName} conference agent3 setup`
+    );
+    await this.retryOperation(
+      () => pageSetup(this.agent4Page, LOGIN_MODE.DESKTOP, tokens.agent4AccessToken),
+      `${this.projectName} conference agent4 setup`
+    );
+    await this.retryOperation(
+      () => loginExtension(this.callerPage, tokens.agent4AccessToken),
+      `${this.projectName} conference caller extension login`
+    );
   }
 
   async setupForStationLogin(browser: Browser, isDesktopMode: boolean = false): Promise<void> {

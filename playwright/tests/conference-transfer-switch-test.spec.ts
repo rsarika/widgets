@@ -12,7 +12,7 @@ import {
   submitWrapupIfVisible,
   clickMergeWhenReady,
 } from '../Utils/conferenceUtils';
-import {ACCEPT_TASK_TIMEOUT, AWAIT_TIMEOUT, TASK_TYPES, USER_STATES} from '../constants';
+import {ACCEPT_TASK_TIMEOUT, AWAIT_TIMEOUT, OPERATION_TIMEOUT, TASK_TYPES, USER_STATES} from '../constants';
 
 export type ConferenceSuiteGroup = 'all' | 'mpc' | 'transfer-switch' | 'mpc-transfer' | 'switch';
 
@@ -160,7 +160,40 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
 
   const endCallAndWrapup = async (page: Page): Promise<void> => {
     await page.getByTestId('call-control:end-call').first().click({timeout: AWAIT_TIMEOUT});
-    await submitWrapupIfVisible(page);
+    await completePostExitConferenceFlow(page);
+  };
+
+  const completePostExitConferenceFlow = async (page: Page): Promise<void> => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < OPERATION_TIMEOUT) {
+      const currentState = await getCurrentState(page).catch(() => '');
+      if (currentState === USER_STATES.AVAILABLE) {
+        return;
+      }
+
+      const wrapupVisible = await page
+        .getByTestId('call-control:wrapup-button')
+        .first()
+        .isVisible()
+        .catch(() => false);
+
+      if (wrapupVisible) {
+        await submitWrapupIfVisible(page);
+      }
+
+      await page.waitForTimeout(500);
+    }
+
+    await waitForState(page, USER_STATES.AVAILABLE, OPERATION_TIMEOUT);
+  };
+
+  const exitConferenceAndWaitForAvailable = async (page: Page): Promise<void> => {
+    const exitButton = page.getByTestId('call-control:exit-conference').first();
+    await expect(exitButton).toBeVisible({timeout: AWAIT_TIMEOUT});
+    await expect(exitButton).toBeEnabled({timeout: AWAIT_TIMEOUT});
+    await exitButton.click({timeout: AWAIT_TIMEOUT});
+    await exitButton.waitFor({state: 'hidden', timeout: OPERATION_TIMEOUT}).catch(() => {});
+    await completePostExitConferenceFlow(page);
   };
 
   test.beforeAll(async ({browser}, testInfo) => {
@@ -186,11 +219,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
     test('CTS-MPC-02 should allow participant exit while owner stays engaged', async () => {
       try {
         await createConferenceA1A2();
-        await testManager.agent2Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent2Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent2Page);
         await verifyCurrentState(testManager.agent1Page, USER_STATES.ENGAGED);
         await endCallAndWrapup(testManager.agent1Page);
       } finally {
@@ -201,11 +230,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
     test('CTS-MPC-03 should keep conference active when owner exits and hand over to remaining participant', async () => {
       try {
         await createConferenceA1A2();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await endCallAndWrapup(testManager.agent2Page);
       } finally {
@@ -252,11 +277,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
     test('CTS-MPC-07 should allow third agent to exit and preserve conference on remaining agents', async () => {
       try {
         await createConferenceA1A2A3();
-        await testManager.agent3Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent3Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent3Page);
         await verifyCurrentState(testManager.agent1Page, USER_STATES.ENGAGED);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
       } finally {
@@ -267,11 +288,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
     test('CTS-MPC-08 should preserve conference between A2 and A3 after A1 exits a 4-party flow', async () => {
       try {
         await createConferenceA1A2A3();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await verifyCurrentState(testManager.agent3Page, USER_STATES.ENGAGED);
       } finally {
@@ -283,11 +300,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await startConsult(testManager.agent2Page, testManager.agent3Page, agent3Name, [testManager.agent4Page]);
         await cancelConsult(testManager.agent2Page);
@@ -328,11 +341,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await startConsult(testManager.agent2Page, testManager.agent3Page, agent3Name, [testManager.agent4Page]);
         await transferConsultLeg(testManager.agent2Page);
@@ -346,11 +355,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
     test('CTS-MPC-13 should keep 4-party conference active when A2 exits', async () => {
       try {
         await createConferenceA1A2A3();
-        await testManager.agent2Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent2Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent2Page);
         await verifyCurrentState(testManager.agent1Page, USER_STATES.ENGAGED);
         await verifyCurrentState(testManager.agent3Page, USER_STATES.ENGAGED);
       } finally {
@@ -386,14 +391,9 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
     test('CTS-MPC-16 should allow handover participant to end conference cleanly', async () => {
       try {
         await createConferenceA1A2();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await endCallAndWrapup(testManager.agent2Page);
-        await waitForState(testManager.agent2Page, USER_STATES.AVAILABLE);
       } finally {
         await cleanupAllAgents();
       }
@@ -423,11 +423,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await expect(testManager.agent2Page.getByTestId('call-control:consult').first()).toBeVisible({
           timeout: AWAIT_TIMEOUT,
@@ -483,11 +479,7 @@ export default function createConferenceTransferSwitchTests(group: ConferenceSui
       const {agent3Name} = getAgentNames();
       try {
         await createConferenceA1A2();
-        await testManager.agent1Page
-          .getByTestId('call-control:exit-conference')
-          .first()
-          .click({timeout: AWAIT_TIMEOUT});
-        await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+        await exitConferenceAndWaitForAvailable(testManager.agent1Page);
         await verifyCurrentState(testManager.agent2Page, USER_STATES.ENGAGED);
         await startConsult(testManager.agent2Page, testManager.agent3Page, agent3Name, [testManager.agent4Page]);
         await transferConsultLeg(testManager.agent2Page);

@@ -125,6 +125,7 @@ export default function createAdvanceCombinationsTests() {
       await testManager.agent1Page.waitForTimeout(2000);
       await submitWrapup(testManager.agent1Page, WRAPUP_REASONS.SALE);
       await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+      await verifyCurrentState(testManager.agent1Page, USER_STATES.AVAILABLE);
 
       await consultOrTransfer(
         testManager.agent2Page,
@@ -163,6 +164,7 @@ export default function createAdvanceCombinationsTests() {
       await testManager.agent1Page.waitForTimeout(2000);
       await submitWrapup(testManager.agent1Page, WRAPUP_REASONS.SALE);
       await waitForState(testManager.agent1Page, USER_STATES.AVAILABLE);
+      await verifyCurrentState(testManager.agent1Page, USER_STATES.AVAILABLE);
       await consultOrTransfer(
         testManager.agent2Page,
         'agent',
