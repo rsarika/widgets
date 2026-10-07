@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import type {AISummaryPreActionSendResult, ITask} from '@webex/cc-store';
+import type {ITask} from '@webex/cc-store';
 import {createEnabledMainTaskUIControls, enabledControl} from '@webex/test-fixtures';
 import {
   handleToggleHold,
@@ -19,7 +19,6 @@ import {
   onInputDialNumber,
   handleButtonPress,
   applyWxAppTelephonyControlVisibility,
-  runMidCallActionBeforeTelephony,
 } from '../../../../src/components/task/CallControl/call-control.utils';
 import type {WrapupCompletionResult} from '../../../../src/components/task/task.types';
 import * as utils from '../../../../src/utils';
@@ -35,16 +34,6 @@ const loggerMock = {
   error: jest.fn(),
   warn: jest.fn(),
   trace: jest.fn(),
-};
-
-const deferred = <T,>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return {promise, resolve, reject};
 };
 
 describe('CallControl Utils', () => {
@@ -406,8 +395,8 @@ describe('CallControl Utils', () => {
       mockSetLastTargetType.mockClear();
     });
 
-    it('should handle consult call successfully', async () => {
-      await handleTargetSelect(
+    it('should handle consult call successfully', () => {
+      handleTargetSelect(
         'agent-123',
         'John Doe',
         'agent',
@@ -430,88 +419,8 @@ describe('CallControl Utils', () => {
       expect(mockTransferCall).not.toHaveBeenCalled();
     });
 
-    it('should commit consult UI state only after pre-action and consult fulfillment settle', async () => {
-      const response = deferred<{outcome: 'sent'}>();
-      const consult = deferred<void>();
-      const order: string[] = [];
-      let resolveConsultStarted!: () => void;
-      const consultStarted = new Promise<void>((resolve) => {
-        resolveConsultStarted = resolve;
-      });
-      const beforeAction = jest.fn(() => {
-        order.push('pre-action');
-        return response.promise;
-      });
-      mockConsultCall.mockImplementation(() => {
-        order.push('consult');
-        resolveConsultStarted();
-        return consult.promise;
-      });
-
-      const result = handleTargetSelect(
-        'agent-123',
-        'John Doe',
-        'agent',
-        false,
-        'Consult',
-        mockConsultCall,
-        mockTransferCall,
-        mockSetConsultAgentName,
-        mockSetLastTargetType,
-        loggerMock,
-        beforeAction
-      );
-
-      await Promise.resolve();
-
-      expect(beforeAction).toHaveBeenCalledTimes(1);
-      expect(mockConsultCall).not.toHaveBeenCalled();
-      expect(mockSetConsultAgentName).not.toHaveBeenCalled();
-      expect(mockSetLastTargetType).not.toHaveBeenCalled();
-
-      response.resolve({outcome: 'sent'});
-      await consultStarted;
-
-      expect(order).toEqual(['pre-action', 'consult']);
-      expect(mockConsultCall).toHaveBeenCalledTimes(1);
-      expect(mockSetConsultAgentName).not.toHaveBeenCalled();
-      expect(mockSetLastTargetType).not.toHaveBeenCalled();
-
-      consult.resolve();
-      await result;
-
-      expect(mockSetConsultAgentName).toHaveBeenCalledWith('John Doe');
-      expect(mockSetLastTargetType).toHaveBeenCalledWith('agent');
-    });
-
-    it('should consume consult promise rejection without committing consult UI state', async () => {
-      mockConsultCall.mockRejectedValue(new Error('Async consult failed'));
-
-      await expect(
-        handleTargetSelect(
-          'agent-123',
-          'John Doe',
-          'agent',
-          false,
-          'Consult',
-          mockConsultCall,
-          mockTransferCall,
-          mockSetConsultAgentName,
-          mockSetLastTargetType,
-          loggerMock
-        )
-      ).resolves.toBeUndefined();
-
-      expect(loggerMock.error).toHaveBeenCalledWith('Error during consult call: Error: Async consult failed', {
-        module: 'call-control.tsx',
-        method: 'handleTargetSelect',
-      });
-      expect(mockSetConsultAgentName).not.toHaveBeenCalled();
-      expect(mockSetLastTargetType).not.toHaveBeenCalled();
-    });
-
-    it('should handle transfer call successfully', async () => {
-      await handleTargetSelect(
+    it('should handle transfer call successfully', () => {
+      handleTargetSelect(
         'queue-456',
         'Support Queue',
         'queue',
@@ -534,12 +443,12 @@ describe('CallControl Utils', () => {
       expect(mockSetLastTargetType).not.toHaveBeenCalled();
     });
 
-    it('should handle consult call error', async () => {
+    it('should handle consult call error', () => {
       mockConsultCall.mockImplementation(() => {
         throw new Error('Consult failed');
       });
 
-      await expect(
+      expect(() => {
         handleTargetSelect(
           'agent-123',
           'John Doe',
@@ -551,23 +460,21 @@ describe('CallControl Utils', () => {
           mockSetConsultAgentName,
           mockSetLastTargetType,
           loggerMock
-        )
-      ).resolves.toBeUndefined();
+        );
+      }).toThrow('Error during consult call');
 
       expect(loggerMock.error).toHaveBeenCalledWith('Error during consult call: Error: Consult failed', {
         module: 'call-control.tsx',
         method: 'handleTargetSelect',
       });
-      expect(mockSetConsultAgentName).not.toHaveBeenCalled();
-      expect(mockSetLastTargetType).not.toHaveBeenCalled();
     });
 
-    it('should handle transfer call error', async () => {
+    it('should handle transfer call error', () => {
       mockTransferCall.mockImplementation(() => {
         throw new Error('Transfer failed');
       });
 
-      await expect(
+      expect(() => {
         handleTargetSelect(
           'queue-456',
           'Support Queue',
@@ -579,34 +486,10 @@ describe('CallControl Utils', () => {
           mockSetConsultAgentName,
           mockSetLastTargetType,
           loggerMock
-        )
-      ).resolves.toBeUndefined();
+        );
+      }).toThrow('Error during transfer call');
 
       expect(loggerMock.error).toHaveBeenCalledWith('Error during transfer call: Error: Transfer failed', {
-        module: 'call-control.tsx',
-        method: 'handleTargetSelect',
-      });
-    });
-
-    it('should consume transfer promise rejection', async () => {
-      mockTransferCall.mockRejectedValue(new Error('Async transfer failed'));
-
-      await expect(
-        handleTargetSelect(
-          'queue-456',
-          'Support Queue',
-          'queue',
-          false,
-          'Transfer',
-          mockConsultCall,
-          mockTransferCall,
-          mockSetConsultAgentName,
-          mockSetLastTargetType,
-          loggerMock
-        )
-      ).resolves.toBeUndefined();
-
-      expect(loggerMock.error).toHaveBeenCalledWith('Error during transfer call: Error: Async transfer failed', {
         module: 'call-control.tsx',
         method: 'handleTargetSelect',
       });
@@ -628,249 +511,6 @@ describe('CallControl Utils', () => {
 
       expect(mockConsultCall).not.toHaveBeenCalled();
       expect(mockTransferCall).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('runMidCallActionBeforeTelephony', () => {
-    const summary = {
-      state: 'content' as const,
-      content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
-      contentRevision: 9,
-      actionType: 'TRANSFER' as const,
-      selectedFeedback: 'none' as const,
-      onEdit: jest.fn(),
-      onCopy: jest.fn(),
-      onFeedback: jest.fn(),
-    };
-
-    it.each(['generic-error', 'unavailable'] as const)(
-      'awaits the %s response before continuing telephony',
-      async (state) => {
-        const response = deferred<{outcome: 'sent'}>();
-        const send = jest.fn().mockReturnValue(response.promise);
-        const telephony = jest.fn();
-        const completion = runMidCallActionBeforeTelephony({
-          summary: {...summary, state, contentRevision: 0},
-          sendMidCallSummaryBeforeAction: send,
-          isPending: () => false,
-          setPending: jest.fn(),
-          runTelephonyAction: telephony,
-          logger: loggerMock,
-          method: 'testUnavailable',
-        });
-        await Promise.resolve();
-        expect(send).toHaveBeenCalledWith('TRANSFER', 0);
-        expect(telephony).not.toHaveBeenCalled();
-        response.resolve({outcome: 'sent'});
-        await completion;
-        expect(telephony).toHaveBeenCalledTimes(1);
-      }
-    );
-
-    it('holds telephony while the pre-action response is pending and ignores re-entry', async () => {
-      const response = deferred<{outcome: 'sent'}>();
-      const sendMidCallSummaryBeforeAction = jest.fn().mockReturnValue(response.promise);
-      const runTelephonyAction = jest.fn();
-      let pending = false;
-      const setPending = jest.fn((value: boolean) => {
-        pending = value;
-      });
-
-      const first = runMidCallActionBeforeTelephony({
-        summary,
-        sendMidCallSummaryBeforeAction,
-        isPending: () => pending,
-        setPending,
-        runTelephonyAction,
-        logger: loggerMock,
-        method: 'testAction',
-      });
-      await runMidCallActionBeforeTelephony({
-        summary,
-        sendMidCallSummaryBeforeAction,
-        isPending: () => pending,
-        setPending,
-        runTelephonyAction,
-        logger: loggerMock,
-        method: 'testAction',
-      });
-
-      expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1);
-      expect(runTelephonyAction).not.toHaveBeenCalled();
-      response.resolve({outcome: 'sent'});
-      await first;
-      expect(runTelephonyAction).toHaveBeenCalledTimes(1);
-      expect(setPending).toHaveBeenLastCalledWith(false);
-    });
-
-    it.each<AISummaryPreActionSendResult['outcome']>(['sent', 'failed', 'blocked', 'stale'])(
-      'delays exactly one telephony action until a %s pre-action response settles',
-      async (outcome) => {
-        const response = deferred<AISummaryPreActionSendResult>();
-        const order: string[] = [];
-        const sendMidCallSummaryBeforeAction = jest.fn(() =>
-          response.promise.then((result) => {
-            order.push(result.outcome);
-            return result;
-          })
-        );
-        const runTelephonyAction = jest.fn(() => {
-          order.push('telephony');
-        });
-        let pending = false;
-
-        const first = runMidCallActionBeforeTelephony({
-          summary,
-          sendMidCallSummaryBeforeAction,
-          isPending: () => pending,
-          setPending: (value) => {
-            pending = value;
-          },
-          runTelephonyAction,
-          logger: loggerMock,
-          method: 'testAction',
-        });
-        await runMidCallActionBeforeTelephony({
-          summary,
-          sendMidCallSummaryBeforeAction,
-          isPending: () => pending,
-          setPending: (value) => {
-            pending = value;
-          },
-          runTelephonyAction,
-          logger: loggerMock,
-          method: 'testAction',
-        });
-
-        expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1);
-        expect(runTelephonyAction).not.toHaveBeenCalled();
-
-        response.resolve({outcome});
-        await first;
-
-        expect(order).toEqual([outcome, 'telephony']);
-        expect(runTelephonyAction).toHaveBeenCalledTimes(1);
-        expect(pending).toBe(false);
-      }
-    );
-
-    it('delays exactly one telephony action until a rejected pre-action response settles', async () => {
-      const response = deferred<AISummaryPreActionSendResult>();
-      const sendMidCallSummaryBeforeAction = jest.fn().mockReturnValue(response.promise);
-      const runTelephonyAction = jest.fn();
-      let pending = false;
-
-      const first = runMidCallActionBeforeTelephony({
-        summary,
-        sendMidCallSummaryBeforeAction,
-        isPending: () => pending,
-        setPending: (value) => {
-          pending = value;
-        },
-        runTelephonyAction,
-        logger: loggerMock,
-        method: 'testAction',
-      });
-      await runMidCallActionBeforeTelephony({
-        summary,
-        sendMidCallSummaryBeforeAction,
-        isPending: () => pending,
-        setPending: (value) => {
-          pending = value;
-        },
-        runTelephonyAction,
-        logger: loggerMock,
-        method: 'testAction',
-      });
-
-      expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1);
-      expect(runTelephonyAction).not.toHaveBeenCalled();
-
-      response.reject(new Error('pre-action rejected'));
-      await first;
-
-      expect(runTelephonyAction).toHaveBeenCalledTimes(1);
-      expect(pending).toBe(false);
-    });
-
-    it('continues exactly one telephony action after a non-sent response outcome settles', async () => {
-      const order: string[] = [];
-      const sendMidCallSummaryBeforeAction = jest.fn(async () => {
-        order.push('response');
-        return {outcome: 'blocked'} as const;
-      });
-      const runTelephonyAction = jest.fn(() => {
-        order.push('telephony');
-      });
-      let pending = false;
-
-      await runMidCallActionBeforeTelephony({
-        summary,
-        sendMidCallSummaryBeforeAction,
-        isPending: () => pending,
-        setPending: (value) => {
-          pending = value;
-        },
-        runTelephonyAction,
-        logger: loggerMock,
-        method: 'testAction',
-      });
-
-      expect(order).toEqual(['response', 'telephony']);
-      expect(runTelephonyAction).toHaveBeenCalledTimes(1);
-    });
-
-    it('continues after a synchronously thrown pre-action response supplier', async () => {
-      const sendMidCallSummaryBeforeAction = jest.fn(() => {
-        throw new Error('Response send failed before returning a promise');
-      });
-      const runTelephonyAction = jest.fn();
-      let pending = false;
-
-      await runMidCallActionBeforeTelephony({
-        summary,
-        sendMidCallSummaryBeforeAction,
-        isPending: () => pending,
-        setPending: (value) => {
-          pending = value;
-        },
-        runTelephonyAction,
-        logger: loggerMock,
-        method: 'testAction',
-      });
-
-      expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1);
-      expect(runTelephonyAction).toHaveBeenCalledTimes(1);
-    });
-
-    it('consumes asynchronous telephony rejection after the pre-action response settles', async () => {
-      const sendMidCallSummaryBeforeAction = jest.fn().mockResolvedValue({outcome: 'sent'});
-      const runTelephonyAction = jest.fn().mockRejectedValue(new Error('Telephony rejected'));
-      let pending = false;
-
-      await expect(
-        runMidCallActionBeforeTelephony({
-          summary,
-          sendMidCallSummaryBeforeAction,
-          isPending: () => pending,
-          setPending: (value) => {
-            pending = value;
-          },
-          runTelephonyAction,
-          logger: loggerMock,
-          method: 'testAction',
-        })
-      ).resolves.toBeUndefined();
-
-      expect(runTelephonyAction).toHaveBeenCalledTimes(1);
-      expect(loggerMock.error).toHaveBeenCalledWith(
-        'CC-Widgets: CallControl: Error running mid-call telephony action - Error: Telephony rejected',
-        {
-          module: 'call-control.tsx',
-          method: 'testAction',
-        }
-      );
-      expect(pending).toBe(false);
     });
   });
 

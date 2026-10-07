@@ -20,11 +20,7 @@ export const POST_CALL_VISUAL_PAYLOAD = {
 };
 
 export const createPostCallVisualContent = (): Extract<AISummaryContent, {type: 'sections'}> => {
-  const normalized = normalizeAISummaryPayload({
-    raw: POST_CALL_VISUAL_PAYLOAD,
-    role: 'post-call',
-    expectedInteractionId: POST_CALL_VISUAL_PAYLOAD.conversationId,
-  });
+  const normalized = normalizeAISummaryPayload(POST_CALL_VISUAL_PAYLOAD, 'post-call');
   if (
     normalized.kind !== 'success' ||
     normalized.content.type !== 'sections' ||

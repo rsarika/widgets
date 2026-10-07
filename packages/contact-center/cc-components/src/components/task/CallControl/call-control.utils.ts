@@ -1,12 +1,11 @@
 import {CallControlMenuType} from '../task.types';
 import type {
-  CallControlAISummaryProps,
   CallControlButton,
   MEDIA_CHANNEL as MediaChannelType,
   MediaTypeInfo,
   WrapupCompletionResult,
 } from '../task.types';
-import type {AISummaryPreActionSendResult, TaskUIControls} from '@webex/cc-store';
+import type {TaskUIControls} from '@webex/cc-store';
 import {getMediaTypeInfo} from '../../../utils';
 import {DestinationType, ILogger, ITask} from '@webex/cc-store';
 
@@ -23,20 +22,8 @@ import {
 } from '../constants';
 import {isWxAppEngagedCall} from '../../../utils/wxapp-telephony.utils';
 
-type MidCallActionSummary = NonNullable<CallControlAISummaryProps['consult']>;
-
 const LEGACY_WRAPUP_SUCCESS: WrapupCompletionResult = {wrapup: 'succeeded', response: 'not-required'};
 const FAILED_WRAPUP: WrapupCompletionResult = {wrapup: 'failed'};
-
-export type MidCallBeforeTelephonyActionParams = {
-  summary?: MidCallActionSummary;
-  sendMidCallSummaryBeforeAction?: CallControlAISummaryProps['sendMidCallSummaryBeforeAction'];
-  isPending: () => boolean;
-  setPending: (pending: boolean) => void;
-  runTelephonyAction: () => void | Promise<void>;
-  logger: ILogger;
-  method: string;
-};
 
 /** SDK P0 keypad control — may exist on main leg before InteractionUIControls ships keypad. */
 type TaskMainControlsWithKeypad = TaskUIControls['main'] & {
@@ -165,92 +152,38 @@ export const handleTargetSelect = (
   type: DestinationType,
   allowParticipantsToInteract: boolean,
   agentMenuType: CallControlMenuType | null,
-  consultCall: (id: string, type: DestinationType, allowParticipantsToInteract: boolean) => void | Promise<void>,
-  transferCall: (id: string, type: DestinationType) => void | Promise<void>,
+  consultCall: (id: string, type: DestinationType, allowParticipantsToInteract: boolean) => void,
+  transferCall: (id: string, type: DestinationType) => void,
   setConsultAgentName: (name: string) => void,
   setLastTargetType: (type: DestinationType) => void,
-  logger: ILogger,
-  beforeAction?: () => Promise<AISummaryPreActionSendResult>
-): Promise<void> => {
+  logger: ILogger
+): void => {
   logger.info('CC-Widgets: CallControl: handling target agent selected', {
     module: 'call-control.tsx',
     method: 'handleTargetSelect',
   });
-  const runBeforeAction = beforeAction
-    ? () =>
-        Promise.resolve()
-          .then(beforeAction)
-          .catch(() => undefined)
-    : () => Promise.resolve();
-
   if (agentMenuType === 'Consult') {
-    const runConsult = async () => {
-      try {
-        await Promise.resolve().then(() => consultCall(id, type, allowParticipantsToInteract));
-        setConsultAgentName(name);
-        setLastTargetType(type);
-      } catch (error) {
-        logger.error(`Error during consult call: ${error}`, {
-          module: 'call-control.tsx',
-          method: 'handleTargetSelect',
-        });
-      }
-    };
-    return runBeforeAction().then(runConsult);
-  } else if (agentMenuType === 'Transfer') {
-    const runTransfer = async () => {
-      try {
-        await Promise.resolve().then(() => transferCall(id, type));
-      } catch (error) {
-        logger.error(`Error during transfer call: ${error}`, {
-          module: 'call-control.tsx',
-          method: 'handleTargetSelect',
-        });
-      }
-    };
-    return runBeforeAction().then(runTransfer);
-  }
-  return Promise.resolve();
-};
-
-/**
- * Runs the optional mid-call response submission before exactly one telephony continuation.
- * Failed, blocked, stale, and thrown response paths still continue after settlement.
- */
-export const runMidCallActionBeforeTelephony = async ({
-  summary,
-  sendMidCallSummaryBeforeAction,
-  isPending,
-  setPending,
-  runTelephonyAction,
-  logger,
-  method,
-}: MidCallBeforeTelephonyActionParams): Promise<void> => {
-  if (isPending()) {
-    logger?.info?.('CC-Widgets: CallControl: mid-call action ignored while response submission is pending', {
-      module: 'call-control.tsx',
-      method,
-    });
-    return;
-  }
-
-  setPending(true);
-  try {
-    const shouldSendResponse =
-      summary && (summary.state === 'content' || summary.state === 'generic-error' || summary.state === 'unavailable');
-    if (shouldSendResponse && sendMidCallSummaryBeforeAction) {
-      await Promise.resolve()
-        .then(() => sendMidCallSummaryBeforeAction(summary.actionType, summary.contentRevision))
-        .catch(() => undefined);
+    try {
+      consultCall(id, type, allowParticipantsToInteract);
+      setConsultAgentName(name);
+      setLastTargetType(type);
+    } catch (error) {
+      logger.error(`Error during consult call: ${error}`, {
+        module: 'call-control.tsx',
+        method: 'handleTargetSelect',
+      });
+      throw new Error('Error during consult call');
     }
-    await Promise.resolve().then(runTelephonyAction);
-  } catch (error) {
-    logger?.error?.(`CC-Widgets: CallControl: Error running mid-call telephony action - ${error}`, {
-      module: 'call-control.tsx',
-      method,
-    });
-  } finally {
-    setPending(false);
+  } else if (agentMenuType === 'Transfer') {
+    try {
+      transferCall(id, type);
+    } catch (error) {
+      logger.error(`Error during transfer call: ${error}`, {
+        module: 'call-control.tsx',
+        method: 'handleTargetSelect',
+      });
+      throw new Error('Error during transfer call');
+    }
   }
 };
 

@@ -50,7 +50,6 @@ const onTaskSelected = jest.fn().mockImplementation(() => {});
 const logger = mockCC.LoggerProxy;
 const initialStoreLogger = store.store.logger;
 
-type SummaryWithViewed = {onViewed?: (expectedRevision: number) => boolean};
 type AISummaryActionsSnapshot = ReturnType<typeof useAISummaryActions>;
 type TaskDataOverride = Partial<NonNullable<ITask['data']>> & {
   interaction?: Partial<NonNullable<NonNullable<ITask['data']>['interaction']>>;
@@ -63,30 +62,12 @@ const AI_SUMMARY_INTERACTION_ID = 'interaction-main-1';
 
 const resetAISummaryStoreState = (): void => {
   runInAction(() => {
-    store.store.aiSummaryCapabilities = {};
-    store.store.aiSummaryCurrentOwners = {};
-    store.store.aiSummaryOwnerStates = {};
-    store.store.aiSummaryPendingRequests = {};
-    store.store.aiSummaryLastResults = {};
-    store.store.pendingAISummaryStatusTransitions = [];
+    store.store.aiSummaries = {};
     store.store.currentTask = null;
     store.store.isAgentLoggedIn = true;
     store.store.agentId = 'agent1';
     store.store.logger = initialStoreLogger;
   });
-};
-
-const enableAISummaryForTask = (
-  task: ITask,
-  capability: {midCallEnabled: boolean; postCallEnabled: boolean; actionTimestamp: number}
-): void => {
-  store.handleAISummaryFeatureEnablement(
-    {
-      interactionId: AI_SUMMARY_INTERACTION_ID,
-      ...capability,
-    },
-    task
-  );
 };
 
 const createAISummaryTask = (overrides: AISummaryTaskOverrides = {}): ITask => {
@@ -136,29 +117,20 @@ const createAISummaryTask = (overrides: AISummaryTaskOverrides = {}): ITask => {
 
 const renderObservedAISummaryActions = (task: ITask) => {
   let current: AISummaryActionsSnapshot = undefined;
-  const snapshots: AISummaryActionsSnapshot[] = [];
   const Probe = observer(({observedTask}: {observedTask: ITask}) => {
     current = useAISummaryActions(observedTask);
-    snapshots.push(current);
     return null;
   });
   const view = render(React.createElement(Probe, {observedTask: task}));
 
   return {
-    snapshots,
     get current() {
       return current;
     },
     rerender(nextTask: ITask) {
       view.rerender(React.createElement(Probe, {observedTask: nextTask}));
     },
-    unmount: view.unmount,
   };
-};
-
-const requestPostCallSummaryContent = async (task: ITask, reasonId = 'wrap1'): Promise<void> => {
-  enableAISummaryForTask(task, {midCallEnabled: true, postCallEnabled: true, actionTimestamp: 1});
-  await store.requestPostCallSummary({type: 'reason-commit', reasonId, selectionRevision: 1}, task);
 };
 
 const resetStoreOfferActionErrors = (): void => {
@@ -203,167 +175,143 @@ describe('useAISummaryActions Hook', () => {
     jest.restoreAllMocks();
   });
 
-  it('reactively projects store-backed summaries and wires canonical request and feedback callbacks', async () => {
+  it('should project the task summaries from the store and wire request, edit and feedback actions', async () => {
     const task = createAISummaryTask();
-    const requestMidCallSpy = jest.spyOn(store, 'requestMidCallSummary');
-    const requestPostCallSpy = jest.spyOn(store, 'requestPostCallSummary');
-    const postCallFeedbackSpy = jest.spyOn(store, 'setPostCallSummaryFeedback');
     const probe = renderObservedAISummaryActions(task);
 
-    expect(probe.current).toBeUndefined();
-
-    act(() => {
-      enableAISummaryForTask(task, {midCallEnabled: true, postCallEnabled: true, actionTimestamp: 1});
-    });
-
-    await waitFor(() => expect(probe.current?.consult?.state).toBe('omitted'));
+    expect(probe.current?.consult?.state).toBe('omitted');
     expect(probe.current?.transfer?.state).toBe('omitted');
     expect(probe.current?.postCall?.state).toBe('omitted');
 
     await act(async () => {
-      await expect(probe.current?.requestMidCallSummary?.('CONSULT')).resolves.toEqual({outcome: 'accepted'});
+      await probe.current?.requestMidCallSummary?.('CONSULT');
     });
 
-    expect(requestMidCallSpy).toHaveBeenCalledWith('CONSULT', 'initiator', task);
     expect(task.requestMidCallSummary).toHaveBeenCalledWith('CONSULT');
     await waitFor(() => expect(probe.current?.consult?.state).toBe('content'));
     expect(probe.current?.consult?.content).toMatchObject({
       type: 'sections',
       sections: expect.arrayContaining([
-        expect.objectContaining({
-          key: 'reasonForTransferOrConsult',
-          value: 'Customer needs billing help.',
-        }),
+        expect.objectContaining({key: 'reasonForTransferOrConsult', value: 'Customer needs billing help.'}),
       ]),
     });
 
-    const midCallRevision = probe.current?.consult?.contentRevision;
+    const midCallRevision = probe.current?.consult?.contentRevision ?? -1;
     await act(async () => {
-      await expect(
-        probe.current?.setMidCallSummaryFeedback?.('like', 'CONSULT', midCallRevision ?? -1)
-      ).resolves.toEqual({outcome: 'confirmed'});
+      await expect(probe.current?.consult?.onFeedback('like', 'CONSULT', midCallRevision)).resolves.toEqual({
+        outcome: 'confirmed',
+      });
     });
 
     expect(task.sendMidCallSummaryResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         feedback: 'thumbs_up',
         state: 'DEFAULT',
-        summary: expect.objectContaining({
-          reasonForTransferOrConsult: 'Customer needs billing help.',
-          additionalContext: 'Invoice discrepancy is the active topic.',
-          keyActionsTaken: 'Verified account and checked invoice.',
-        }),
+        summary: expect.objectContaining({reasonForTransferOrConsult: 'Customer needs billing help.'}),
       }),
       'CONSULT'
     );
     await waitFor(() => expect(probe.current?.consult?.selectedFeedback).toBe('like'));
 
     await act(async () => {
-      probe.current?.onPostCallReasonCommit?.('wrap1', 2);
+      probe.current?.requestPostCallSummary?.();
       await Promise.resolve();
     });
 
-    expect(requestPostCallSpy).toHaveBeenCalledWith(
-      {type: 'reason-commit', reasonId: 'wrap1', selectionRevision: 2},
-      task
-    );
     expect(task.requestPostCallSummary).toHaveBeenCalledWith();
     await waitFor(() => expect(probe.current?.postCall?.state).toBe('content'));
-    expect(probe.current?.postCall?.content).toMatchObject({
-      type: 'sections',
-      sections: expect.arrayContaining([
-        expect.objectContaining({
-          key: 'initialContactReason',
-          value: 'Customer called about an invoice discrepancy.',
-        }),
-      ]),
-    });
 
-    const postCallRevision = probe.current?.postCall?.contentRevision;
+    const postCallRevision = probe.current?.postCall?.contentRevision ?? -1;
     act(() => {
-      expect(probe.current?.setPostCallSummaryFeedback?.('dislike', postCallRevision ?? -1)).toBe(true);
+      expect(
+        probe.current?.postCall?.onEdit({key: 'initialContactReason', value: 'Edited reason'}, postCallRevision)
+      ).toBe(true);
     });
+    await waitFor(() =>
+      expect(probe.current?.postCall?.content).toMatchObject({
+        sections: expect.arrayContaining([expect.objectContaining({value: 'Edited reason'})]),
+      })
+    );
+    expect(probe.current?.postCall?.contentRevision).toBe(postCallRevision);
 
-    expect(postCallFeedbackSpy).toHaveBeenCalledWith('dislike', postCallRevision, task);
+    act(() => {
+      expect(probe.current?.postCall?.onFeedback('dislike', postCallRevision)).toBe(true);
+    });
     await waitFor(() => expect(probe.current?.postCall?.selectedFeedback).toBe('dislike'));
     expect(probe.current?.postCall?.feedbackStatus).toBe('pending');
-
-    act(() => {
-      enableAISummaryForTask(task, {midCallEnabled: false, postCallEnabled: false, actionTimestamp: 2});
-    });
-    await waitFor(() => expect(probe.current).toBeUndefined());
-
-    act(() => {
-      enableAISummaryForTask(task, {midCallEnabled: true, postCallEnabled: true, actionTimestamp: 3});
-    });
-    await waitFor(() => expect(probe.current?.postCall?.state).toBe('content'));
-    expect(probe.current?.postCall?.selectedFeedback).toBe('dislike');
   });
 
-  it('exposes pre-request summary adapters and reuses one mid-call request per preparation', async () => {
-    const voiceTask = {
-      ...taskMock,
-      data: {
-        ...taskMock.data,
-        agentId: 'agent-a',
-        interactionId: 'leg-1',
-        interaction: {
-          ...(taskMock.data.interaction ?? {}),
-          mainInteractionId: 'main-1',
-          mediaType: 'telephony',
-          media: {
-            'media-main': {mType: 'mainCall', mediaResourceId: 'main-1'},
-          },
-        },
-      },
-      aiSummaryCapabilities: {midCallEnabled: true, postCallEnabled: true, actionTimestamp: 100},
-    } as unknown as ITask;
-    const viewModel = {
-      eligible: true,
-      surface: 'omitted' as const,
-      requestPending: false,
-      counters: {viewed: 0, copied: 0, edited: 0, liked: 0, disliked: 0},
-      feedback: 'none' as const,
-    };
-    jest.spyOn(store, 'getAISummaryViewModel').mockImplementation((kind, role) => ({
-      ...viewModel,
-      key: `${kind}:${role}` as never,
-    }));
-    const requestSpy = jest.spyOn(store, 'requestMidCallSummary').mockResolvedValue({
-      outcome: 'accepted',
+  it('should omit summaries the SDK reports as disabled for the task', () => {
+    const disabledTask = createAISummaryTask({
+      aiSummaryCapabilities: {midCallEnabled: false, postCallEnabled: false},
     });
-    const viewedSpy = jest.spyOn(store, 'recordAISummaryViewed').mockReturnValue(true);
+    const probe = renderObservedAISummaryActions(disabledTask);
 
-    const {result, rerender} = renderHook(({task}) => useAISummaryActions(task), {
-      initialProps: {task: voiceTask},
+    expect(probe.current).toBeUndefined();
+
+    probe.rerender(createAISummaryTask({aiSummaryCapabilities: {midCallEnabled: false, postCallEnabled: true}}));
+    expect(probe.current?.consult).toBeUndefined();
+    expect(probe.current?.postCall?.state).toBe('omitted');
+  });
+
+  it('should call the store for every mid-call summary request', async () => {
+    const task = createAISummaryTask();
+    const requestSpy = jest.spyOn(store, 'requestMidCallSummary').mockResolvedValue(undefined);
+    const {result} = renderHook(() => useAISummaryActions(task));
+
+    await result.current?.requestMidCallSummary?.('CONSULT');
+    await result.current?.requestMidCallSummary?.('CONSULT');
+    await result.current?.requestMidCallSummary?.('TRANSFER');
+
+    expect(requestSpy).toHaveBeenCalledTimes(3);
+    expect(requestSpy).toHaveBeenLastCalledWith('TRANSFER', task);
+  });
+
+  it('should request the post-call summary only once per wrap-up', async () => {
+    const task = createAISummaryTask();
+    const requestSpy = jest.spyOn(store, 'requestPostCallSummary');
+    const {result} = renderHook(() => useAISummaryActions(task));
+
+    await act(async () => {
+      result.current?.requestPostCallSummary?.();
+      await Promise.resolve();
+    });
+    result.current?.requestPostCallSummary?.();
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(requestSpy).toHaveBeenCalledWith(task);
+  });
+
+  it('should report the initiator summary as each consult or transfer starts', async () => {
+    const task = createAISummaryTask();
+    const order: string[] = [];
+    jest.spyOn(store, 'sendMidCallSummaryResponse').mockImplementation(async (actionType) => {
+      order.push(`summary:${actionType}`);
+    });
+    (task.consult as jest.Mock).mockImplementation(async () => {
+      order.push('consult');
+    });
+    (task.transfer as jest.Mock).mockImplementation(async () => {
+      order.push('transfer');
+    });
+    const {result} = renderHook(() =>
+      useCallControl({
+        currentTask: task,
+        logger,
+        isMuted: false,
+        conferenceEnabled: true,
+        agentId: 'agent1',
+      })
+    );
+
+    await act(async () => {
+      await result.current.consultCall('agent2', 'agent', false);
+      await result.current.transferCall('agent3', 'agent');
     });
 
-    expect(result.current?.consult?.state).toBe('omitted');
-    expect(result.current?.transfer?.state).toBe('omitted');
-    expect(result.current?.postCall?.state).toBe('omitted');
-    expect((result.current?.consult as SummaryWithViewed | undefined)?.onViewed?.(5)).toBe(true);
-    expect(viewedSpy).toHaveBeenCalledWith('mid-call', 'initiator', 5, voiceTask);
-    expect((result.current?.postCall as SummaryWithViewed | undefined)?.onViewed?.(6)).toBe(true);
-    expect(viewedSpy).toHaveBeenCalledWith('post-call', 'post-call', 6, voiceTask);
-
-    const firstConsultRequest = result.current?.requestMidCallSummary?.('CONSULT');
-    const repeatedConsultRequest = result.current?.requestMidCallSummary?.('CONSULT');
-
-    expect(firstConsultRequest).toBeDefined();
-    expect(repeatedConsultRequest).toBe(firstConsultRequest);
-    await expect(firstConsultRequest!).resolves.toEqual({outcome: 'accepted'});
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    expect(requestSpy).toHaveBeenCalledWith('CONSULT', 'initiator', voiceTask);
-
-    rerender({task: {...voiceTask, data: {...voiceTask.data}} as ITask});
-    expect(result.current?.requestMidCallSummary?.('CONSULT')).toBe(firstConsultRequest);
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-
-    const transferRequest = result.current?.requestMidCallSummary?.('TRANSFER');
-    expect(transferRequest).toBeDefined();
-    await expect(transferRequest!).resolves.toEqual({outcome: 'accepted'});
-    expect(requestSpy).toHaveBeenCalledTimes(2);
-    expect(requestSpy).toHaveBeenLastCalledWith('TRANSFER', 'initiator', expect.any(Object));
+    expect(order).toEqual(['summary:CONSULT', 'consult', 'summary:TRANSFER', 'transfer']);
+    expect(store.sendMidCallSummaryResponse).toHaveBeenCalledWith('CONSULT', task);
+    expect(store.sendMidCallSummaryResponse).toHaveBeenCalledWith('TRANSFER', task);
   });
 });
 
@@ -1123,33 +1071,6 @@ describe('useCallControl', () => {
   const mockOnHoldResume = jest.fn();
   const mockOnEnd = jest.fn();
   const mockOnWrapUp = jest.fn();
-  const createAISummaryCounters = () => ({viewed: 0, copied: 0, edited: 0, liked: 0, disliked: 0});
-  const createIneligibleAISummaryView = (kind = 'post-call', role = 'post-call') => ({
-    key: `${kind}:${role}` as never,
-    eligible: false,
-    surface: 'omitted' as const,
-    requestPending: false,
-    counters: createAISummaryCounters(),
-    feedback: 'none' as const,
-  });
-  const createPostCallContentView = (overrides = {}) => ({
-    key: 'post-call:post-call' as const,
-    eligible: true,
-    surface: 'content' as const,
-    requestPending: false,
-    content: {type: 'text' as const, summaryText: 'Customer issue was resolved.'},
-    contentRevision: 6,
-    counters: createAISummaryCounters(),
-    feedback: 'none' as const,
-    ...overrides,
-  });
-  const mockPostCallContentView = (overrides = {}) =>
-    jest.spyOn(store, 'getAISummaryViewModel').mockImplementation((kind, role) => {
-      if (kind === 'post-call') {
-        return createPostCallContentView(overrides);
-      }
-      return createIneligibleAISummaryView(kind, role);
-    });
 
   const createParticipantDropTask = (dropRequest = jest.fn().mockResolvedValue(undefined)): ITask =>
     ({
@@ -3242,12 +3163,7 @@ describe('useCallControl', () => {
     });
   });
 
-  it('returns the legacy not-required result without capturing a post-call draft', async () => {
-    jest
-      .spyOn(store, 'getAISummaryViewModel')
-      .mockImplementation((kind, role) => createIneligibleAISummaryView(kind, role));
-    const captureSpy = jest.spyOn(store, 'capturePostCallDraft');
-
+  it('should wrap up without a summary response when the task has no post-call summary', async () => {
     const {result} = renderHook(() =>
       useCallControl({
         currentTask: mockCurrentTask,
@@ -3268,88 +3184,9 @@ describe('useCallControl', () => {
 
     expect(wrapupResult).toEqual({wrapup: 'succeeded', response: 'not-required'});
     expect(mockCurrentTask.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Wrap reason', auxCodeId: '123'});
-    expect(captureSpy).not.toHaveBeenCalled();
   });
 
-  it.each(['submitted' as const, 'response-failed' as const])(
-    'returns the eligible post-call %s result after wrap-up succeeds',
-    async (response) => {
-      store.setCurrentTask = jest.fn();
-      store.setState = jest.fn();
-      jest.spyOn(store, 'taskList', 'get').mockReturnValue({
-        [mockCurrentTask.data.interactionId]: mockCurrentTask,
-      });
-      mockPostCallContentView();
-      const token = Symbol('post-call-capture');
-      const captureSpy = jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-      const freezeSpy = jest.spyOn(store, 'freezeAndSendPostCallSummary').mockResolvedValue({
-        wrapup: 'succeeded',
-        response,
-      });
-
-      const {result} = renderHook(() =>
-        useCallControl({
-          currentTask: mockCurrentTask,
-          onHoldResume: mockOnHoldResume,
-          onEnd: mockOnEnd,
-          onWrapUp: mockOnWrapUp,
-          logger: mockLogger,
-          isMuted: false,
-          conferenceEnabled: true,
-          agentId: 'test-agent-id',
-        })
-      );
-
-      let wrapupResult;
-      await act(async () => {
-        wrapupResult = await result.current.wrapupCall('Wrap reason', '123');
-      });
-
-      expect(wrapupResult).toEqual({wrapup: 'succeeded', response});
-      expect(captureSpy).toHaveBeenCalledWith('123', mockCurrentTask);
-      expect(mockCurrentTask.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Wrap reason', auxCodeId: '123'});
-      expect(freezeSpy).toHaveBeenCalledWith(token);
-      expect(store.setCurrentTask).toHaveBeenCalledWith(mockCurrentTask);
-      expect(store.setState).toHaveBeenCalledWith({
-        developerName: 'ENGAGED',
-        name: 'Engaged',
-      });
-    }
-  );
-
-  it('returns response-failed without reverting successful wrap-up when post-call submission rejects', async () => {
-    mockPostCallContentView();
-    const token = Symbol('post-call-capture');
-    jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-    jest.spyOn(store, 'freezeAndSendPostCallSummary').mockRejectedValue(new Error('response rejected'));
-
-    const {result} = renderHook(() =>
-      useCallControl({
-        currentTask: mockCurrentTask,
-        onHoldResume: mockOnHoldResume,
-        onEnd: mockOnEnd,
-        onWrapUp: mockOnWrapUp,
-        logger: mockLogger,
-        isMuted: false,
-        conferenceEnabled: true,
-        agentId: 'test-agent-id',
-      })
-    );
-
-    let wrapupResult;
-    await act(async () => {
-      wrapupResult = await result.current.wrapupCall('Wrap reason', '123');
-    });
-
-    expect(wrapupResult).toEqual({wrapup: 'succeeded', response: 'response-failed'});
-    expect(mockCurrentTask.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Wrap reason', auxCodeId: '123'});
-    expect(mockLogger.error).not.toHaveBeenCalledWith('Error wrapping up call', {
-      module: 'widget-cc-task#helper.ts',
-      method: 'useCallControl#wrapupCall',
-    });
-  });
-
-  it('sends a captured post-call draft only after wrap-up succeeds and preserves response failures', async () => {
+  it('should send the post-call summary only after wrap-up succeeds and report a failed response', async () => {
     resetAISummaryStoreState();
     const successTask = createAISummaryTask();
     const wrapupDeferred = (() => {
@@ -3361,7 +3198,7 @@ describe('useCallControl', () => {
     })();
 
     await act(async () => {
-      await requestPostCallSummaryContent(successTask);
+      await store.requestPostCallSummary(successTask);
     });
     (successTask.wrapup as jest.Mock).mockReturnValueOnce(wrapupDeferred.promise);
 
@@ -3416,7 +3253,7 @@ describe('useCallControl', () => {
     });
 
     await act(async () => {
-      await requestPostCallSummaryContent(failedResponseTask);
+      await store.requestPostCallSummary(failedResponseTask);
     });
 
     const failedResponseHook = renderHook(() =>
@@ -3440,6 +3277,7 @@ describe('useCallControl', () => {
     expect(failedResponseResult).toEqual({wrapup: 'succeeded', response: 'response-failed'});
     expect(failedResponseTask.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Customer Issue', auxCodeId: 'wrap1'});
     expect(failedResponseTask.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
+    expect(mockLogger.error).not.toHaveBeenCalledWith('Error wrapping up call', expect.anything());
   });
 
   it('should log an error if wrapup fails', async () => {
@@ -3661,14 +3499,6 @@ describe('useCallControl', () => {
   it('should call transferCall successfully', async () => {
     const transferSpy = jest.fn().mockResolvedValue('Transferred');
     const currentTaskSuccess = {...mockCurrentTask, transfer: transferSpy};
-    const capturedOwnerKey = {
-      captureId: 'capture-transfer',
-      interactionId: 'someMockInteractionId',
-      agentId: 'test-agent-id',
-      ownerKeys: {},
-    };
-    const captureSpy = jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue(capturedOwnerKey);
-    const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
     const {result} = renderHook(() =>
       useCallControl({
         currentTask: currentTaskSuccess,
@@ -3688,12 +3518,6 @@ describe('useCallControl', () => {
       to: 'test_id',
       destinationType: 'agent',
     });
-    expect(captureSpy).toHaveBeenCalledWith(currentTaskSuccess);
-    expect(advanceSpy).toHaveBeenCalledWith(
-      capturedOwnerKey,
-      {type: 'direct-transfer', mode: 'reset', successorAgentId: 'test_id'},
-      currentTaskSuccess
-    );
   });
 
   it('should handle rejection when loading buddy agents', async () => {
@@ -3830,13 +3654,6 @@ describe('useCallControl', () => {
     const transferError = new Error('Transfer failed');
     const transferSpy = jest.fn().mockRejectedValue(transferError);
     const currentTaskFailure = {...mockCurrentTask, transfer: transferSpy};
-    jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue({
-      captureId: 'capture-transfer-reject',
-      interactionId: 'someMockInteractionId',
-      agentId: 'test-agent-id',
-      ownerKeys: {},
-    });
-    const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
     const {result} = renderHook(() =>
       useCallControl({
         currentTask: currentTaskFailure,
@@ -3852,7 +3669,6 @@ describe('useCallControl', () => {
 
     await expect(result.current.transferCall('test_transfer', 'agent')).rejects.toThrow(transferError);
     expect(transferSpy).toHaveBeenCalledWith({to: 'test_transfer', destinationType: 'agent'});
-    expect(advanceSpy).not.toHaveBeenCalled();
     expect(mockLogger.error).toHaveBeenCalledWith('Error transferring call: Error: Transfer failed', {
       module: 'useCallControl',
       method: 'transferCall',
@@ -4045,14 +3861,6 @@ describe('useCallControl', () => {
   it('should call consultTransfer successfully', async () => {
     mockCurrentTask.transfer = jest.fn().mockResolvedValue('ConsultTransferred');
     store.store.lastConsultDestination = {to: 'consultAgentId', destinationType: 'agent'};
-    const capturedOwnerKey = {
-      captureId: 'capture-consult-transfer',
-      interactionId: 'someMockInteractionId',
-      agentId: 'test-agent-id',
-      ownerKeys: {},
-    };
-    jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue(capturedOwnerKey);
-    const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
     const {result} = renderHook(() =>
       useCallControl({
         currentTask: mockCurrentTask,
@@ -4072,24 +3880,12 @@ describe('useCallControl', () => {
       to: 'consultAgentId',
       destinationType: 'agent',
     });
-    expect(advanceSpy).toHaveBeenCalledWith(
-      capturedOwnerKey,
-      {type: 'consult-transfer', mode: 'reset', successorAgentId: 'consultAgentId'},
-      mockCurrentTask
-    );
   });
 
   it('should handle errors when calling consultTransfer', async () => {
     const transferError = new Error('Consult transfer failed');
     mockCurrentTask.transfer = jest.fn().mockRejectedValue(transferError);
     store.store.lastConsultDestination = {to: 'consultAgentId', destinationType: 'agent'};
-    jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue({
-      captureId: 'capture-consult-transfer-reject',
-      interactionId: 'someMockInteractionId',
-      agentId: 'test-agent-id',
-      ownerKeys: {},
-    });
-    const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
     const {result} = renderHook(() =>
       useCallControl({
         currentTask: mockCurrentTask,
@@ -4105,7 +3901,6 @@ describe('useCallControl', () => {
 
     await expect(result.current.consultTransfer()).rejects.toThrow(transferError);
     expect(mockCurrentTask.transfer).toHaveBeenCalled();
-    expect(advanceSpy).not.toHaveBeenCalled();
     expect(mockLogger.error).toHaveBeenCalledWith('Error transferring consult call: Error: Consult transfer failed', {
       module: 'widget-cc-task#helper.ts',
       method: 'useCallControl#consultTransfer',
@@ -5674,15 +5469,6 @@ describe('useCallControl', () => {
     describe('consultConference', () => {
       it('should call consultConference successfully', async () => {
         mockCurrentTask.consultConference = jest.fn().mockResolvedValue(undefined);
-        const capturedOwnerKey = {
-          captureId: 'capture-consult-conference',
-          interactionId: 'someMockInteractionId',
-          agentId: 'test-agent-id',
-          ownerKeys: {},
-        };
-        jest.spyOn(store, 'agentId', 'get').mockReturnValue('test-agent-id');
-        jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue(capturedOwnerKey);
-        const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
 
         const {result} = renderHook(() =>
           useCallControl({
@@ -5702,11 +5488,6 @@ describe('useCallControl', () => {
         });
 
         expect(mockCurrentTask.consultConference).toHaveBeenCalled();
-        expect(advanceSpy).toHaveBeenCalledWith(
-          capturedOwnerKey,
-          {type: 'consult-conference', mode: 'carry-forward', successorAgentId: 'test-agent-id'},
-          mockCurrentTask
-        );
         expect(mockLogger.info).toHaveBeenCalledWith('consultConference success', {
           module: 'useCallControl',
           method: 'consultConference',
@@ -5716,13 +5497,6 @@ describe('useCallControl', () => {
       it('should handle consultConference error', async () => {
         const error = new Error('consultConference failed');
         mockCurrentTask.consultConference = jest.fn().mockRejectedValue(error);
-        jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue({
-          captureId: 'capture-consult-conference-reject',
-          interactionId: 'someMockInteractionId',
-          agentId: 'test-agent-id',
-          ownerKeys: {},
-        });
-        const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
 
         const {result} = renderHook(() =>
           useCallControl({
@@ -5743,7 +5517,6 @@ describe('useCallControl', () => {
           })
         ).rejects.toThrow('consultConference failed');
 
-        expect(advanceSpy).not.toHaveBeenCalled();
         expect(mockLogger.error).toHaveBeenCalledWith('Error consulting conference: Error: consultConference failed', {
           module: 'useCallControl',
           method: 'consultConference',
@@ -5931,14 +5704,6 @@ describe('useCallControl', () => {
           },
           transferConference: jest.fn().mockResolvedValue(undefined),
         };
-        const capturedOwnerKey = {
-          captureId: 'capture-transfer-conference',
-          interactionId: 'someMockInteractionId',
-          agentId: 'test-agent-id',
-          ownerKeys: {},
-        };
-        jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue(capturedOwnerKey);
-        const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
 
         const {result} = renderHook(() =>
           useCallControl({
@@ -5962,11 +5727,6 @@ describe('useCallControl', () => {
           method: 'consultTransfer',
         });
         expect(taskWithConference.transferConference).toHaveBeenCalled();
-        expect(advanceSpy).toHaveBeenCalledWith(
-          capturedOwnerKey,
-          {type: 'transfer-conference', mode: 'reset'},
-          taskWithConference
-        );
       });
 
       it('should handle transferConference error when conference is in progress', async () => {
@@ -5979,13 +5739,6 @@ describe('useCallControl', () => {
           },
           transferConference: jest.fn().mockRejectedValue(error),
         };
-        jest.spyOn(store, 'getCurrentAISummaryOwnerKey').mockReturnValue({
-          captureId: 'capture-transfer-conference-reject',
-          interactionId: 'someMockInteractionId',
-          agentId: 'test-agent-id',
-          ownerKeys: {},
-        });
-        const advanceSpy = jest.spyOn(store, 'advanceAISummaryOwnership').mockReturnValue({outcome: 'advanced'});
 
         const {result} = renderHook(() =>
           useCallControl({
@@ -6006,7 +5759,6 @@ describe('useCallControl', () => {
           })
         ).rejects.toThrow('transferConference failed');
 
-        expect(advanceSpy).not.toHaveBeenCalled();
         expect(mockLogger.error).toHaveBeenCalledWith(
           'Error transferring consult call: Error: transferConference failed',
           {

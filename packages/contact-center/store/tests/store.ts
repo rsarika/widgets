@@ -72,7 +72,7 @@ describe('Store', () => {
 
     expect(makeAutoObservable).toHaveBeenCalledWith(storeInstance, {
       cc: expect.any(Function),
-      pendingAISummaryStatusTransitions: expect.any(Function),
+      aiSummaries: expect.any(Function),
     });
   });
 

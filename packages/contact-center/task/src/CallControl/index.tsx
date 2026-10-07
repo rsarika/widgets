@@ -4,42 +4,11 @@ import {ErrorBoundary} from 'react-error-boundary';
 
 import store from '@webex/cc-store';
 import {useCallControl} from '../helper';
-import {AISummaryStatusDetail, CallControlProps, useCallControlProps} from '../task.types';
+import {CallControlProps, useCallControlProps} from '../task.types';
 import {CallControlComponent, TelephonyActionToast} from '@webex/cc-components';
 import {isUnacceptedCampaignPreview} from '../Utils/task-util';
 
 type CallControlControlsProps = CallControlProps & useCallControlProps;
-
-const AISummaryStatusDrain: React.FunctionComponent<Pick<CallControlProps, 'onAISummaryStatusChange'>> = observer(
-  ({onAISummaryStatusChange}) => {
-    const pendingAISummaryStatusTransitions = store.getPendingAISummaryStatusTransitions();
-
-    useEffect(() => {
-      if (!onAISummaryStatusChange) {
-        return;
-      }
-
-      for (const transition of pendingAISummaryStatusTransitions) {
-        if (!store.acknowledgeAISummaryStatusTransition(transition.sequence)) {
-          continue;
-        }
-
-        const detail: AISummaryStatusDetail = {
-          kind: transition.kind,
-          state: transition.state,
-        } as AISummaryStatusDetail;
-
-        try {
-          onAISummaryStatusChange(detail);
-        } catch {
-          // Host callbacks are isolated from the widget and acknowledged at most once.
-        }
-      }
-    }, [onAISummaryStatusChange, pendingAISummaryStatusTransitions]);
-
-    return null;
-  }
-);
 
 const CallControlControls: React.FunctionComponent<CallControlControlsProps> = observer(
   ({
@@ -131,18 +100,23 @@ const CallControlInternal: React.FunctionComponent<CallControlProps> = observer(
 );
 
 const CallControl: React.FunctionComponent<CallControlProps> = (props) => {
+  const {onAISummaryStatusChange} = props;
+
+  // Forward content-free summary status changes to the host while the widget is mounted.
+  useEffect(
+    () => (onAISummaryStatusChange ? store.onAISummaryStatusChange(onAISummaryStatusChange) : undefined),
+    [onAISummaryStatusChange]
+  );
+
   return (
-    <>
-      <AISummaryStatusDrain onAISummaryStatusChange={props.onAISummaryStatusChange} />
-      <ErrorBoundary
-        fallbackRender={() => <></>}
-        onError={(error: Error) => {
-          if (store.onErrorCallback) store.onErrorCallback('CallControl', error);
-        }}
-      >
-        <CallControlInternal {...props} />
-      </ErrorBoundary>
-    </>
+    <ErrorBoundary
+      fallbackRender={() => <></>}
+      onError={(error: Error) => {
+        if (store.onErrorCallback) store.onErrorCallback('CallControl', error);
+      }}
+    >
+      <CallControlInternal {...props} />
+    </ErrorBoundary>
   );
 };
 

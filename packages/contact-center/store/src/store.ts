@@ -16,12 +16,7 @@ import {
   RealTimeTranscriptionData,
   RealTimeAssistPayload,
   OfferActionErrorDisplay,
-  AISummaryCapabilityRecord,
-  AISummaryCurrentOwnerSlots,
-  AISummaryLastResult,
-  AISummaryOwnerState,
-  AISummaryPendingRequest,
-  AISummaryStatusTransition,
+  AISummaryEntries,
 } from './store.types';
 
 import {getFeatureFlags} from './util';
@@ -73,17 +68,12 @@ class Store implements IStore {
   isEmergencyModalAlreadyDisplayed: boolean = false;
   realTimeAssist: Record<string, RealTimeAssistPayload[]> = {};
   offerActionErrors: Record<string, OfferActionErrorDisplay> = {};
-  aiSummaryCapabilities: Record<string, AISummaryCapabilityRecord> = {};
-  aiSummaryCurrentOwners: Record<string, AISummaryCurrentOwnerSlots> = {};
-  aiSummaryOwnerStates: Record<string, AISummaryOwnerState> = {};
-  aiSummaryPendingRequests: Record<number, AISummaryPendingRequest> = {};
-  aiSummaryLastResults: Record<string, AISummaryLastResult> = {};
-  pendingAISummaryStatusTransitions: readonly AISummaryStatusTransition[] = [];
+  aiSummaries: Record<string, AISummaryEntries> = {};
 
   constructor() {
     makeAutoObservable(this, {
       cc: observable.ref,
-      pendingAISummaryStatusTransitions: observable.ref,
+      aiSummaries: observable.ref,
     });
   }
 

@@ -56,7 +56,6 @@ export const AI_SUMMARY_MESSAGES = {
   },
   feedback: {
     pendingSubmission: 'Pending submission',
-    submissionNotConfirmed: 'Submission not confirmed',
   },
 } as const;
 

@@ -7,7 +7,6 @@ import type {
   AISummaryFeedback,
   AISummaryFeedbackResult,
   AISummaryFeedbackStatus,
-  AISummaryRequestResult,
   AISummarySurface,
 } from '@webex/cc-store';
 
@@ -107,7 +106,7 @@ export type AISummaryPostCallProps = AISummaryBaseProps &
     mode: 'post-call';
     feedbackStatus?: AISummaryFeedbackStatus;
     onFeedback: (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) => boolean;
-    onRetry: () => Promise<AISummaryRequestResult>;
+    onRetry: () => Promise<void>;
     onComplete?: () => void;
     onCopyVisualStateChange: (state: AISummaryCopyVisualState) => void;
     actionType?: never;

@@ -1,7 +1,5 @@
 import {
   AISummaryActionType,
-  AISummaryFeedback,
-  AISummaryFeedbackResult,
   ILogger,
   ITask,
   IContactCenter,
@@ -18,8 +16,6 @@ import {
   AddressBookEntrySearchParams,
   AddressBookEntriesResponse,
   TaskUIControls,
-  AISummaryPreActionSendResult,
-  AISummaryRequestResult,
   PostCallSubmissionResult,
 } from '@webex/cc-store';
 import {CampaignErrorType} from './CampaignErrorDialog/campaign-error-dialog.types';
@@ -74,18 +70,8 @@ export type CallControlAISummaryProps = {
   consult?: ConsultTransferSummaryView;
   transfer?: ConsultTransferSummaryView;
   postCall?: WrapUpSummaryView;
-  requestMidCallSummary?: (actionType: AISummaryActionType) => Promise<AISummaryRequestResult>;
-  setMidCallSummaryFeedback?: (
-    feedback: Exclude<AISummaryFeedback, 'none'>,
-    actionType: AISummaryActionType,
-    expectedRevision: number
-  ) => Promise<AISummaryFeedbackResult>;
-  setPostCallSummaryFeedback?: (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) => boolean;
-  onPostCallReasonCommit?: (reasonId: string, selectionRevision: number) => void;
-  sendMidCallSummaryBeforeAction?: (
-    actionType: AISummaryActionType,
-    expectedRevision: number
-  ) => Promise<AISummaryPreActionSendResult>;
+  requestMidCallSummary?: (actionType: AISummaryActionType) => Promise<void>;
+  requestPostCallSummary?: () => void;
 };
 
 /**
@@ -767,7 +753,6 @@ export interface ConsultTransferListComponentProps {
   presence?: 'active' | 'away';
   buttonIcon: string;
   onButtonPress: () => void;
-  actionDisabled?: boolean;
   className?: string;
   logger: ILogger;
 }
@@ -787,7 +772,7 @@ export interface ConsultTransferDialNumberComponentProps {
 /**
  * Interface representing the properties for ConsultTransferPopover component.
  */
-export type ConsultTransferDestinationLayout = 'voice-radio' | 'non-voice-pill' | 'existing-party-action';
+export type ConsultTransferDestinationLayout = 'voice-radio' | 'non-voice-pill';
 
 export interface ConsultTransferPopoverComponentProps {
   heading: string;
@@ -806,11 +791,6 @@ export interface ConsultTransferPopoverComponentProps {
   availableDestinations: TaskUIControls['consultTransferDestinations']['consult'];
   destinationLayout?: ConsultTransferDestinationLayout;
   interactionId?: string;
-  isActionPending?: boolean;
-  onExistingPartyConfirm?: () => void;
-  existingPartyConfirmLabel?: string;
-  summaryActionType?: AISummaryActionType;
-  requestSummaryOnOpen?: boolean;
   /** Options governing popover visibility/behavior */
   consultTransferOptions?: ConsultTransferOptions;
   isConferenceInProgress?: boolean;
@@ -835,7 +815,6 @@ export interface CallControlConsultComponentsProps {
   conferenceEnabled: boolean;
   enableWxBetterTogether?: boolean;
   currentTask?: ITask | null;
-  aiSummary?: CallControlAISummaryProps;
 }
 
 /**

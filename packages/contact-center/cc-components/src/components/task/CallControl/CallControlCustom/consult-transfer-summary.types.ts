@@ -4,7 +4,6 @@ import type {
   AISummaryEditableField,
   AISummaryFeedback,
   AISummaryFeedbackResult,
-  AISummaryRequestResult,
   AISummarySurface,
 } from '@webex/cc-store';
 
@@ -16,7 +15,6 @@ export type ConsultTransferSummaryView = {
   selectedFeedback?: AISummaryFeedback;
   requestPending?: boolean;
   controlsDisabled?: boolean;
-  onViewed?: (expectedRevision: number) => boolean;
   onEdit: (field: AISummaryEditableField, expectedRevision: number) => boolean;
   onCopy: (expectedRevision: number) => boolean;
   onFeedback: (
@@ -28,5 +26,4 @@ export type ConsultTransferSummaryView = {
 
 export type ConsultTransferSummaryProps = {
   summary?: ConsultTransferSummaryView;
-  requestMidCallSummary?: (actionType: AISummaryActionType) => Promise<AISummaryRequestResult>;
 };

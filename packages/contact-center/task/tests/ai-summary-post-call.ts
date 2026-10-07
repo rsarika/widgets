@@ -1,29 +1,17 @@
-import store, {ITask, PostCallDraftCaptureToken} from '@webex/cc-store';
+import store, {ITask} from '@webex/cc-store';
 import {aiSummaryFixtures} from '@webex/test-fixtures';
 import type {AISummary, AISummaryResponse} from '@webex/contact-center';
-import {TASK_EVENTS} from '@webex/contact-center';
-import {EventEmitter} from 'events';
-import {
-  completeWrapupWithSummary,
-  editPostCallSummary,
-  getPostCallSummaryView,
-  requestPostCallSummaryForReason,
-  retryPostCallSummary,
-  setPostCallSummaryFeedback,
-} from '../src/ai-summary-post-call';
+import {completeWrapupWithSummary, getPostCallSummaryView} from '../src/ai-summary-post-call';
 
 type PostCallTestTask = ITask & {
-  aiSummaryCapabilities: ITask['aiSummaryCapabilities'];
   requestPostCallSummary: jest.Mock<Promise<AISummary>, []>;
   sendPostCallSummaryResponse: jest.Mock<Promise<void>, [AISummaryResponse]>;
   wrapup: jest.Mock<Promise<unknown>, [{wrapUpReason: string; auxCodeId: string}]>;
 };
 
-const deferred = <T = unknown>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-} => {
+const INTERACTION_ID = 'interaction-main-1';
+
+const deferred = <T = unknown>() => {
   let resolve: (value: T) => void = () => undefined;
   let reject: (reason?: unknown) => void = () => undefined;
   const promise = new Promise<T>((promiseResolve, promiseReject) => {
@@ -33,587 +21,189 @@ const deferred = <T = unknown>(): {
   return {promise, resolve, reject};
 };
 
+const createPostCallTask = (overrides: Partial<PostCallTestTask> = {}): PostCallTestTask =>
+  ({
+    data: {interactionId: INTERACTION_ID, interaction: {mediaType: 'telephony'}},
+    aiSummaryCapabilities: {midCallEnabled: true, postCallEnabled: true},
+    requestPostCallSummary: jest.fn().mockResolvedValue(aiSummaryFixtures.postCall.plainText),
+    sendPostCallSummaryResponse: jest.fn().mockResolvedValue(undefined),
+    wrapup: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  }) as unknown as PostCallTestTask;
+
+const postCallEntry = () => store.aiSummaries[INTERACTION_ID]?.['post-call'];
+
+const wrapUp = (task: PostCallTestTask, onWrapupCommitted?: () => void) =>
+  completeWrapupWithSummary({task, wrapUpReason: 'Billing', auxCodeId: 'aux-billing', onWrapupCommitted});
+
 describe('ai-summary-post-call', () => {
-  const createPostCallTask = (overrides: Partial<PostCallTestTask> = {}): PostCallTestTask => {
-    const events = new EventEmitter();
-    return {
-      data: {
-        agentId: 'agent-a',
-        interactionId: 'interaction-main-1',
-        interaction: {
-          interactionId: 'interaction-main-1',
-          mainInteractionId: 'interaction-main-1',
-          mediaType: 'telephony',
-          media: {
-            'media-main': {mType: 'mainCall', mediaResourceId: 'interaction-main-1'},
-          },
-        },
-      },
-      aiSummaryCapabilities: {midCallEnabled: true, postCallEnabled: true},
-      requestPostCallSummary: jest.fn().mockResolvedValue(aiSummaryFixtures.postCall.structured),
-      sendPostCallSummaryResponse: jest.fn().mockResolvedValue(undefined),
-      wrapup: jest.fn().mockResolvedValue(undefined),
-      on: events.on.bind(events),
-      off: events.off.bind(events),
-      emit: events.emit.bind(events),
-      ...overrides,
-    } as PostCallTestTask;
-  };
-
-  const resetStoreAISummaryState = (): void => {
-    store.store.agentId = 'agent-a';
-    store.store.isAgentLoggedIn = true;
-    store.store.aiSummaryCapabilities = {};
-    store.store.aiSummaryCurrentOwners = {};
-    store.store.aiSummaryOwnerStates = {};
-    store.store.aiSummaryPendingRequests = {};
-    store.store.aiSummaryLastResults = {};
-    store.store.pendingAISummaryStatusTransitions = [];
-    store['aiSummaryLatestFreshness'] = {};
-    store['aiSummaryLatestRequestSequences'] = {};
-    store['retiredAISummaryInteractions'].clear();
-    store['aiSummaryFeatureArrivalOrder'] = 0;
-    store['aiSummaryPayloadArrivalOrder'] = 0;
-    store['aiSummaryRequestSequence'] = 0;
-    store['aiSummaryStatusSequence'] = 0;
-    store['aiSummaryContentRevision'] = 0;
-    store['aiSummaryOwnershipGeneration'] = 0;
-    store['aiSummaryPostCallGeneration'] = 0;
-    store['aiSummarySeededCapabilityTasks'] = new WeakSet();
-    store['aiSummaryOwnerTasks'] = {};
-    store['aiSummaryPendingRequestTasks'] = {};
-    Object.keys(store['aiSummaryWrappedUpSubscriptions']).forEach((key) => {
-      store['detachAISummaryWrappedUpSubscription'](key);
-    });
-    store['aiSummaryWrappedUpObservedOwnerKeys'].clear();
-    store['aiSummaryPendingOwnershipCaptures'] = {};
-    store['aiSummaryAppliedOwnershipCaptureIds'].clear();
-    store['aiSummaryObservedOwnershipBoundaries'].clear();
-    store['aiSummaryTopologySignatures'] = {};
-    store['postCallDraftCaptures'].clear();
-  };
-
-  beforeEach(resetStoreAISummaryState);
+  beforeEach(() => {
+    store.store.aiSummaries = {};
+  });
 
   afterEach(() => {
     jest.restoreAllMocks();
-    resetStoreAISummaryState();
+    store.store.aiSummaries = {};
   });
 
-  it('projects editable post-call content and treats card-only content as unavailable', () => {
-    jest.spyOn(store, 'getAISummaryViewModel').mockReturnValue({
-      key: 'post-call:post-call',
-      eligible: true,
-      surface: 'content',
-      requestPending: false,
-      content: {type: 'card', adaptiveCard: {type: 'AdaptiveCard'}},
-      contentRevision: 4,
-      counters: {viewed: 0, copied: 0, edited: 0, liked: 0, disliked: 0},
-      feedback: 'none',
-      controlsDisabled: true,
-    } as ReturnType<typeof store.getAISummaryViewModel> & {controlsDisabled: boolean});
-
-    expect(getPostCallSummaryView()).toMatchObject({
-      state: 'unavailable',
-      content: {type: 'text', summaryText: ''},
-      contentRevision: 4,
-      controlsDisabled: true,
-    });
-  });
-
-  it('returns an eligible omitted view before reason commit and generating for the first pending request', () => {
-    const viewModel = {
-      key: 'post-call:post-call' as const,
-      eligible: true,
-      surface: 'omitted' as const,
-      requestPending: false,
-      counters: {viewed: 0, copied: 0, edited: 0, liked: 0, disliked: 0},
-      feedback: 'none' as const,
-    };
-    const viewSpy = jest.spyOn(store, 'getAISummaryViewModel').mockReturnValue(viewModel);
-
-    expect(getPostCallSummaryView()).toMatchObject({
-      state: 'omitted',
-      requestPending: false,
+  describe('getPostCallSummaryView', () => {
+    it('should hide the summary when the SDK reports post-call summaries as disabled for the task', () => {
+      expect(
+        getPostCallSummaryView(
+          createPostCallTask({aiSummaryCapabilities: {midCallEnabled: true, postCallEnabled: false}})
+        )
+      ).toBeUndefined();
     });
 
-    viewSpy.mockReturnValue({...viewModel, surface: 'generating', requestPending: true});
+    it('should show generating while the first request is pending', async () => {
+      const generation = deferred<AISummary>();
+      const task = createPostCallTask({requestPostCallSummary: jest.fn(() => generation.promise)});
 
-    expect(getPostCallSummaryView()).toMatchObject({
-      state: 'generating',
-      requestPending: true,
-      completionEscape: false,
-    });
+      const request = store.requestPostCallSummary(task);
 
-    viewSpy.mockReturnValue({...viewModel, surface: 'generating', requestPending: true, completionEscape: true});
-
-    expect(getPostCallSummaryView()).toMatchObject({
-      state: 'generating',
-      requestPending: true,
-      completionEscape: true,
-    });
-  });
-
-  it('requests reason commits and retries through closed store triggers', async () => {
-    const requestSpy = jest.spyOn(store, 'requestPostCallSummary').mockResolvedValue({outcome: 'blocked'});
-
-    await expect(requestPostCallSummaryForReason('reason-1', 7)).resolves.toEqual({outcome: 'blocked'});
-    await expect(retryPostCallSummary()).resolves.toEqual({outcome: 'blocked'});
-    expect(requestSpy).toHaveBeenNthCalledWith(
-      1,
-      {type: 'reason-commit', reasonId: 'reason-1', selectionRevision: 7},
-      undefined
-    );
-    expect(requestSpy).toHaveBeenNthCalledWith(2, {type: 'retry'}, undefined);
-  });
-
-  it('projects the store-owned completion escape through retry-pending post-call views', async () => {
-    resetStoreAISummaryState();
-    const retry = (() => {
-      let reject: (reason?: unknown) => void = () => undefined;
-      const promise = new Promise<AISummary>((_resolve, promiseReject) => {
-        reject = promiseReject;
+      expect(getPostCallSummaryView(task)).toMatchObject({state: 'generating', requestPending: true});
+      generation.resolve(aiSummaryFixtures.postCall.plainText);
+      await request;
+      expect(getPostCallSummaryView(task)).toMatchObject({
+        state: 'content',
+        content: {type: 'text'},
+        requestPending: false,
       });
-      return {promise, reject};
-    })();
-    const task = createPostCallTask({
-      requestPostCallSummary: jest
-        .fn()
-        .mockRejectedValueOnce(new Error('initial failure'))
-        .mockReturnValueOnce(retry.promise),
     });
 
-    await expect(requestPostCallSummaryForReason('reason-1', 1, task)).resolves.toEqual({outcome: 'failed'});
-    expect(getPostCallSummaryView(task)).toMatchObject({
-      state: 'generic-error',
-      requestPending: false,
-      completionEscape: true,
-    });
-
-    const retryRequest = retryPostCallSummary(task);
-    expect(getPostCallSummaryView(task)).toMatchObject({
-      state: 'generating',
-      requestPending: true,
-      completionEscape: true,
-    });
-
-    retry.reject(new Error('retry failure'));
-    await expect(retryRequest).resolves.toEqual({outcome: 'failed'});
-  });
-
-  it('allows completion during Retry after a terminal generation error without requiring a draft response', async () => {
-    const retry = deferred<AISummary>();
-    const task = createPostCallTask({
-      requestPostCallSummary: jest
-        .fn()
-        .mockRejectedValueOnce(new Error('initial failure'))
-        .mockReturnValueOnce(retry.promise),
-    });
-    const captureSpy = jest.spyOn(store, 'capturePostCallDraft');
-
-    await expect(requestPostCallSummaryForReason('reason-1', 1, task)).resolves.toEqual({outcome: 'failed'});
-    const retryRequest = retryPostCallSummary(task);
-
-    expect(getPostCallSummaryView(task)).toMatchObject({
-      state: 'generating',
-      requestPending: true,
-      completionEscape: true,
-    });
-    await expect(
-      completeWrapupWithSummary({
-        task,
-        wrapUpReason: 'Escalated',
-        auxCodeId: 'aux-code-escalated',
-        responseRequired: getPostCallSummaryView(task)?.state === 'content',
-      })
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'not-required'});
-    expect(captureSpy).not.toHaveBeenCalled();
-    expect(task.sendPostCallSummaryResponse).not.toHaveBeenCalled();
-
-    retry.reject(new Error('retry failure'));
-    await expect(retryRequest).resolves.toEqual({outcome: 'stale'});
-  });
-
-  it('retains edited drafts through reason regeneration and repeated close/reopen projection', async () => {
-    const regeneration = deferred<AISummary>();
-    const task = createPostCallTask({
-      requestPostCallSummary: jest
-        .fn()
-        .mockResolvedValueOnce(aiSummaryFixtures.postCall.structured)
-        .mockReturnValueOnce(regeneration.promise),
-    });
-
-    await expect(requestPostCallSummaryForReason('reason-1', 1, task)).resolves.toEqual({outcome: 'accepted'});
-    const initialView = getPostCallSummaryView(task);
-    expect(initialView?.state).toBe('content');
-    expect(
-      editPostCallSummary(
-        {key: 'initialContactReason', value: 'Edited draft retained across reopen.'},
-        initialView?.contentRevision ?? 0,
-        task
-      )
-    ).toBe(true);
-
-    const regenerationRequest = requestPostCallSummaryForReason('reason-2', 2, task);
-    const pendingView = getPostCallSummaryView(task);
-    const reopenedView = getPostCallSummaryView(task);
-
-    expect(pendingView).toMatchObject({
-      state: 'content',
-      requestPending: true,
-      content: expect.objectContaining({
-        sections: expect.arrayContaining([
-          expect.objectContaining({key: 'initialContactReason', value: 'Edited draft retained across reopen.'}),
-        ]),
-      }),
-    });
-    expect(reopenedView).toEqual(pendingView);
-
-    regeneration.reject(new Error('regeneration failed'));
-    await expect(regenerationRequest).resolves.toEqual({outcome: 'failed'});
-    expect(getPostCallSummaryView(task)).toMatchObject({
-      state: 'content',
-      requestPending: false,
-      content: expect.objectContaining({
-        sections: expect.arrayContaining([
-          expect.objectContaining({key: 'initialContactReason', value: 'Edited draft retained across reopen.'}),
-        ]),
-      }),
-    });
-  });
-
-  it('projects resolution-absent structured summaries without an Outcome field', async () => {
-    const task = createPostCallTask({
-      requestPostCallSummary: jest.fn().mockResolvedValue(aiSummaryFixtures.postCall.resolutionAbsent),
-    });
-
-    await expect(requestPostCallSummaryForReason('reason-1', 1, task)).resolves.toEqual({outcome: 'accepted'});
-    const view = getPostCallSummaryView(task);
-
-    expect(view?.state).toBe('content');
-    expect(view?.content).toMatchObject({
-      type: 'sections',
-      sections: [expect.objectContaining({key: 'initialContactReason'}), expect.objectContaining({key: 'nextSteps'})],
-    });
-    if (view?.content.type === 'sections') {
-      expect(view.content.resolution).toBeUndefined();
-    }
-  });
-
-  it('routes edits and local feedback through exact post-call keys', () => {
-    const editSpy = jest.spyOn(store, 'editAISummary').mockReturnValue(true);
-    const feedbackSpy = jest.spyOn(store, 'setPostCallSummaryFeedback').mockReturnValue(true);
-
-    expect(editPostCallSummary({key: 'summaryText', value: 'Edited'}, 2)).toBe(true);
-    expect(setPostCallSummaryFeedback('dislike', 2)).toBe(true);
-    expect(editSpy).toHaveBeenCalledWith('post-call', 'post-call', {key: 'summaryText', value: 'Edited'}, 2);
-    expect(feedbackSpy).toHaveBeenCalledWith('dislike', 2);
-  });
-
-  it('wraps up without a summary response when no draft is required', async () => {
-    const task = {wrapup: jest.fn().mockResolvedValue(undefined)};
-    const captureSpy = jest.spyOn(store, 'capturePostCallDraft');
-    const markCompletedSpy = jest.spyOn(store, 'markPostCallWrapupCompleted');
-
-    await expect(
-      completeWrapupWithSummary({
-        task: task as never,
-        wrapUpReason: 'Resolved',
-        auxCodeId: 'aux-1',
-        responseRequired: false,
-      })
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'not-required'});
-    expect(task.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Resolved', auxCodeId: 'aux-1'});
-    expect(captureSpy).not.toHaveBeenCalled();
-    expect(markCompletedSpy).toHaveBeenCalledWith('aux-1', task);
-  });
-
-  it('captures before wrap-up and sends the frozen response only after wrap-up succeeds', async () => {
-    const task = {wrapup: jest.fn().mockResolvedValue(undefined)};
-    const token = Symbol('capture');
-    const order: string[] = [];
-    const captureSpy = jest.spyOn(store, 'capturePostCallDraft').mockImplementation(() => {
-      order.push('capture');
-      return token as never;
-    });
-    task.wrapup.mockImplementation(async () => {
-      order.push('wrapup');
-    });
-    jest.spyOn(store, 'freezeAndSendPostCallSummary').mockImplementation(async () => {
-      order.push('send');
-      return {wrapup: 'succeeded', response: 'submitted'};
-    });
-
-    await expect(
-      completeWrapupWithSummary({
-        task: task as never,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: true,
-      })
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
-    expect(order).toEqual(['capture', 'wrapup', 'send']);
-    expect(captureSpy).toHaveBeenCalledWith('aux-code-9', task);
-    expect(task.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Human label', auxCodeId: 'aux-code-9'});
-  });
-
-  it('commits successful wrap-up before the summary response send settles', async () => {
-    const task = {wrapup: jest.fn().mockResolvedValue(undefined)};
-    const token = Symbol('capture');
-    const responseSend = deferred<{wrapup: 'succeeded'; response: 'submitted'}>();
-    const order: string[] = [];
-    const setCurrentTaskSpy = jest.spyOn(store, 'setCurrentTask').mockImplementation(() => undefined);
-    const setStateSpy = jest.spyOn(store, 'setState').mockImplementation(() => undefined);
-    const completionObserver = jest.fn();
-
-    jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-    task.wrapup.mockImplementation(async () => {
-      order.push('wrapup');
-    });
-    jest.spyOn(store, 'freezeAndSendPostCallSummary').mockImplementation(() => {
-      order.push('send-start');
-      return responseSend.promise;
-    });
-
-    const completion = completeWrapupWithSummary({
-      task: task as never,
-      wrapUpReason: 'Human label',
-      auxCodeId: 'aux-code-9',
-      responseRequired: true,
-      onWrapupCommitted: () => {
-        order.push('commit');
-        store.setCurrentTask(task as never);
-        store.setState({developerName: 'ENGAGED', name: 'Engaged'});
-      },
-    });
-    void completion.then(completionObserver);
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(order).toEqual(['wrapup', 'commit', 'send-start']);
-    expect(setCurrentTaskSpy).toHaveBeenCalledWith(task);
-    expect(setStateSpy).toHaveBeenCalledWith({developerName: 'ENGAGED', name: 'Engaged'});
-    expect(completionObserver).not.toHaveBeenCalled();
-
-    responseSend.resolve({wrapup: 'succeeded', response: 'submitted'});
-    await expect(completion).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
-    expect(completionObserver).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns failed without wrapping up when draft capture throws', async () => {
-    const task = {wrapup: jest.fn().mockResolvedValue(undefined)};
-    jest.spyOn(store, 'capturePostCallDraft').mockImplementation(() => {
-      throw new Error('capture failed');
-    });
-
-    await expect(
-      completeWrapupWithSummary({
-        task: task as never,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: true,
-      })
-    ).resolves.toEqual({wrapup: 'failed'});
-    expect(task.wrapup).not.toHaveBeenCalled();
-  });
-
-  it('sends exactly once when the SDK wrapped-up event precedes wrapup Promise fulfillment', async () => {
-    const order: string[] = [];
-    jest.spyOn(store, 'refreshTaskList').mockImplementation(() => undefined);
-    const task = createPostCallTask();
-    task.wrapup.mockImplementation(async () => {
-      order.push('wrapped-up event');
-      task.emit(TASK_EVENTS.TASK_WRAPPEDUP);
-      store.handleTaskRemove(task);
-      order.push('wrapup fulfilled');
-    });
-    task.sendPostCallSummaryResponse.mockImplementation(async () => {
-      order.push('response');
-    });
-    await requestPostCallSummaryForReason('reason-1', 1, task);
-    await expect(
-      completeWrapupWithSummary({task, wrapUpReason: 'Human label', auxCodeId: 'aux-code', responseRequired: true})
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
-    expect(order).toEqual(['wrapped-up event', 'wrapup fulfilled', 'response']);
-    expect(task.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
-    expect(getPostCallSummaryView(task)).toMatchObject({state: 'content', controlsDisabled: true});
-  });
-
-  it('captures retained content during regeneration before wrap-up and rejects the late generation', async () => {
-    const regeneration = deferred<AISummary>();
-    const responseSend = deferred<void>();
-    const task = createPostCallTask({
-      requestPostCallSummary: jest
-        .fn()
-        .mockResolvedValueOnce(aiSummaryFixtures.postCall.structured)
-        .mockReturnValueOnce(regeneration.promise),
-      sendPostCallSummaryResponse: jest.fn().mockReturnValue(responseSend.promise),
-    });
-
-    await requestPostCallSummaryForReason('reason-1', 1, task);
-    const regenerationRequest = retryPostCallSummary(task);
-    expect(getPostCallSummaryView(task)).toMatchObject({state: 'content', requestPending: true});
-
-    const completion = completeWrapupWithSummary({
-      task,
-      wrapUpReason: aiSummaryFixtures.wrapUp.distinctReasonAndCode.wrapUpReason,
-      auxCodeId: aiSummaryFixtures.wrapUp.distinctReasonAndCode.auxCodeId,
-      responseRequired: getPostCallSummaryView(task)?.state === 'content',
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(task.wrapup).toHaveBeenCalledWith({
-      wrapUpReason: aiSummaryFixtures.wrapUp.distinctReasonAndCode.wrapUpReason,
-      auxCodeId: aiSummaryFixtures.wrapUp.distinctReasonAndCode.auxCodeId,
-    });
-    expect(task.sendPostCallSummaryResponse).toHaveBeenCalledWith(
-      expect.objectContaining({wrapUpCode: aiSummaryFixtures.wrapUp.distinctReasonAndCode.auxCodeId})
-    );
-
-    regeneration.resolve(aiSummaryFixtures.postCall.plainText);
-    await expect(regenerationRequest).resolves.toEqual({outcome: 'stale'});
-    responseSend.resolve(undefined);
-    await expect(completion).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
-  });
-
-  it('reuses one in-flight completion promise for the same task', async () => {
-    const wrapup = (() => {
-      let resolve: (value?: unknown) => void = () => undefined;
-      const promise = new Promise<unknown>((promiseResolve) => {
-        resolve = promiseResolve;
+    it('should show the error after a failure and generating again while Retry is pending', async () => {
+      const retry = deferred<AISummary>();
+      const task = createPostCallTask({
+        requestPostCallSummary: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('POST_CALL_SUMMARY_TIMEOUT'))
+          .mockImplementationOnce(() => retry.promise),
       });
-      return {promise, resolve};
-    })();
-    const response = (() => {
-      let resolve: (value: {wrapup: 'succeeded'; response: 'submitted'}) => void = () => undefined;
-      const promise = new Promise<{wrapup: 'succeeded'; response: 'submitted'}>((promiseResolve) => {
-        resolve = promiseResolve;
+
+      await store.requestPostCallSummary(task);
+      expect(getPostCallSummaryView(task)?.state).toBe('generic-error');
+
+      const retryRequest = store.requestPostCallSummary(task);
+      expect(getPostCallSummaryView(task)?.state).toBe('generating');
+
+      retry.resolve(aiSummaryFixtures.postCall.plainText);
+      await retryRequest;
+      expect(getPostCallSummaryView(task)?.state).toBe('content');
+    });
+
+    it('should describe local feedback as pending until the final response', async () => {
+      const task = createPostCallTask();
+      await store.requestPostCallSummary(task);
+
+      expect(store.setPostCallSummaryFeedback('like', postCallEntry().revision, task)).toBe(true);
+      expect(getPostCallSummaryView(task)).toMatchObject({selectedFeedback: 'like', feedbackStatus: 'pending'});
+    });
+  });
+
+  describe('completeWrapupWithSummary', () => {
+    it('should wrap up without a summary response when post-call summaries are disabled', async () => {
+      const task = createPostCallTask({aiSummaryCapabilities: {midCallEnabled: true, postCallEnabled: false}});
+
+      await expect(wrapUp(task)).resolves.toEqual({wrapup: 'succeeded', response: 'not-required'});
+      expect(task.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Billing', auxCodeId: 'aux-billing'});
+      expect(task.sendPostCallSummaryResponse).not.toHaveBeenCalled();
+    });
+
+    it('should report a wrap-up before the summary arrived as ignored', async () => {
+      const task = createPostCallTask({requestPostCallSummary: jest.fn(() => new Promise<AISummary>(() => undefined))});
+      void store.requestPostCallSummary(task);
+
+      await expect(wrapUp(task)).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
+      expect(task.sendPostCallSummaryResponse).toHaveBeenCalledWith(
+        expect.objectContaining({summary: '', state: 'IGNORED', wrapUpCode: 'aux-billing'})
+      );
+    });
+
+    it('should send the edited summary, counters, feedback and wrap-up code once after wrap-up succeeds', async () => {
+      const order: string[] = [];
+      const task = createPostCallTask();
+      await store.requestPostCallSummary(task);
+      store.editAISummary('post-call', {key: 'summaryText', value: 'Edited summary'}, postCallEntry().revision, task);
+      store.setPostCallSummaryFeedback('dislike', postCallEntry().revision, task);
+      task.wrapup.mockImplementation(async () => {
+        order.push('wrapup');
       });
-      return {promise, resolve};
-    })();
-    const task = {wrapup: jest.fn().mockReturnValue(wrapup.promise)};
-    const token = Symbol('capture');
-    const captureSpy = jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-    const freezeSpy = jest.spyOn(store, 'freezeAndSendPostCallSummary').mockReturnValue(response.promise);
+      task.sendPostCallSummaryResponse.mockImplementation(async () => {
+        order.push('response');
+      });
 
-    const first = completeWrapupWithSummary({
-      task: task as never,
-      wrapUpReason: 'Human label',
-      auxCodeId: 'aux-code-9',
-      responseRequired: true,
+      await expect(wrapUp(task, () => order.push('commit'))).resolves.toEqual({
+        wrapup: 'succeeded',
+        response: 'submitted',
+      });
+      expect(order).toEqual(['wrapup', 'commit', 'response']);
+      expect(task.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
+      expect(task.sendPostCallSummaryResponse).toHaveBeenCalledWith({
+        summary: 'Edited summary',
+        feedback: 'thumbs_down',
+        state: 'DEFAULT',
+        numberOfTimesViewed: 1,
+        numberOfTimesEdited: 1,
+        numberOfTimesCopied: 0,
+        summaryReceived: true,
+        wrapUpCode: 'aux-billing',
+      });
     });
-    const second = completeWrapupWithSummary({
-      task: task as never,
-      wrapUpReason: 'Other label',
-      auxCodeId: 'aux-code-10',
-      responseRequired: true,
+
+    it('should still send the response when wrap-up removes the task before its promise settles', async () => {
+      const task = createPostCallTask();
+      await store.requestPostCallSummary(task);
+      task.wrapup.mockImplementation(async () => {
+        store.store.aiSummaries = {};
+      });
+
+      await expect(wrapUp(task)).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
+      expect(task.sendPostCallSummaryResponse).toHaveBeenCalledWith(
+        expect.objectContaining({summary: expect.any(String)})
+      );
+      expect(postCallEntry()).toBeUndefined();
     });
 
-    expect(second).toBe(first);
-    expect(task.wrapup).toHaveBeenCalledTimes(1);
-    expect(captureSpy).toHaveBeenCalledTimes(1);
+    it('should keep the summary and send nothing when wrap-up fails', async () => {
+      const task = createPostCallTask({wrapup: jest.fn().mockRejectedValue(new Error('wrap-up failed'))});
+      await store.requestPostCallSummary(task);
 
-    wrapup.resolve();
-    await Promise.resolve();
-    expect(freezeSpy).toHaveBeenCalledTimes(1);
-
-    response.resolve({wrapup: 'succeeded', response: 'submitted'});
-    await expect(first).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
-    await expect(second).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
-  });
-
-  it('releases a captured draft when wrap-up fails and never rejects', async () => {
-    const token = Symbol('capture');
-    jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-    const releaseSpy = jest.spyOn(store, 'releasePostCallDraft').mockReturnValue(true);
-    const task = {wrapup: jest.fn().mockRejectedValue(new Error('raw'))};
-
-    await expect(
-      completeWrapupWithSummary({
-        task: task as never,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: true,
-      })
-    ).resolves.toEqual({wrapup: 'failed'});
-    expect(releaseSpy).toHaveBeenCalledWith(token);
-  });
-
-  it('suppresses release failures when wrap-up fails', async () => {
-    const token = Symbol('capture');
-    jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-    const releaseSpy = jest.spyOn(store, 'releasePostCallDraft').mockImplementation(() => {
-      throw new Error('release failed');
+      await expect(wrapUp(task)).resolves.toEqual({wrapup: 'failed'});
+      expect(task.sendPostCallSummaryResponse).not.toHaveBeenCalled();
+      expect(getPostCallSummaryView(task)?.state).toBe('content');
     });
-    const task = {wrapup: jest.fn().mockRejectedValue(new Error('raw'))};
 
-    await expect(
-      completeWrapupWithSummary({
-        task: task as never,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: true,
-      })
-    ).resolves.toEqual({wrapup: 'failed'});
-    expect(releaseSpy).toHaveBeenCalledWith(token);
-  });
+    it('should report response-failed without retrying when the summary response fails', async () => {
+      const task = createPostCallTask({
+        sendPostCallSummaryResponse: jest.fn().mockRejectedValue(new Error('503')),
+      });
+      await store.requestPostCallSummary(task);
+      store.setPostCallSummaryFeedback('like', postCallEntry().revision, task);
 
-  it('retains wrap-up success and returns response-failed when summary response submission fails', async () => {
-    const token = Symbol('capture');
-    jest.spyOn(store, 'capturePostCallDraft').mockReturnValue(token as never);
-    jest.spyOn(store, 'freezeAndSendPostCallSummary').mockRejectedValue(new Error('send failed'));
-    const task = {wrapup: jest.fn().mockResolvedValue(undefined)};
-
-    await expect(
-      completeWrapupWithSummary({
-        task: task as never,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: true,
-      })
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'response-failed'});
-    expect(task.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Human label', auxCodeId: 'aux-code-9'});
-  });
-
-  it('does not resend a failed frozen response on replay or repeated completion', async () => {
-    resetStoreAISummaryState();
-    const task = createPostCallTask({
-      sendPostCallSummaryResponse: jest.fn().mockRejectedValue(new Error('send failed')),
+      await expect(wrapUp(task)).resolves.toEqual({wrapup: 'succeeded', response: 'response-failed'});
+      expect(task.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
     });
-    const captureSpy = jest.spyOn(store, 'capturePostCallDraft');
 
-    await expect(requestPostCallSummaryForReason('reason-1', 1, task)).resolves.toEqual({outcome: 'accepted'});
-    expect(task.requestPostCallSummary).toHaveBeenCalledTimes(1);
+    it('should share one completion between concurrent calls for the same task', async () => {
+      const wrapup = deferred<void>();
+      const task = createPostCallTask();
+      task.wrapup.mockImplementation(() => wrapup.promise);
+      await store.requestPostCallSummary(task);
 
-    await expect(
-      completeWrapupWithSummary({
-        task,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: getPostCallSummaryView(task)?.state === 'content',
-      })
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'response-failed'});
-    const token = captureSpy.mock.results[0]?.value as PostCallDraftCaptureToken | undefined;
-    expect(token).toBeDefined();
-    expect(task.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
+      const first = wrapUp(task);
+      const second = wrapUp(task);
+      wrapup.resolve();
 
-    await expect(store.freezeAndSendPostCallSummary(token!)).resolves.toEqual({
-      wrapup: 'succeeded',
-      response: 'response-failed',
+      expect(second).toBe(first);
+      await expect(first).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
+      expect(task.wrapup).toHaveBeenCalledTimes(1);
+      expect(task.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
     });
-    await expect(
-      completeWrapupWithSummary({
-        task,
-        wrapUpReason: 'Human label',
-        auxCodeId: 'aux-code-9',
-        responseRequired: getPostCallSummaryView(task)?.state === 'content',
-      })
-    ).resolves.toEqual({wrapup: 'succeeded', response: 'response-failed'});
 
-    expect(task.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
-    expect(task.requestPostCallSummary).toHaveBeenCalledTimes(1);
-    expect(task.wrapup).toHaveBeenCalledTimes(1);
+    it('should fail without calling the SDK when the task cannot wrap up', async () => {
+      await expect(
+        completeWrapupWithSummary({task: {} as ITask, wrapUpReason: 'Billing', auxCodeId: 'aux-billing'})
+      ).resolves.toEqual({wrapup: 'failed'});
+    });
   });
 });

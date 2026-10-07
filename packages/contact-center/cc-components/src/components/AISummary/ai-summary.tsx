@@ -585,12 +585,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     );
   };
 
-  const feedbackDescription =
-    props.mode === 'post-call' && feedbackStatus === 'pending'
-      ? AI_SUMMARY_MESSAGES.feedback.pendingSubmission
-      : props.mode === 'post-call' && feedbackStatus === 'not-confirmed'
-        ? AI_SUMMARY_MESSAGES.feedback.submissionNotConfirmed
-        : undefined;
+  const feedbackDescription = feedbackStatus === 'pending' ? AI_SUMMARY_MESSAGES.feedback.pendingSubmission : undefined;
 
   const showActions = props.state === 'content';
   const showSummaryHeading = props.mode === 'post-call' && props.state === 'content';
@@ -624,7 +619,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     }
   };
   const handleFeedbackActionMouseEnter = (feedback: Exclude<AISummaryTooltipControl, 'copy'>) => {
-    if (disabled || feedbackStatus === 'not-confirmed') {
+    if (disabled) {
       return;
     }
     setHoveredTooltip(feedback);
@@ -705,7 +700,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
                         selected ? ' ai-summary__feedback-button--selected' : ''
                       }`}
                       type="button"
-                      disabled={disabled || feedbackStatus === 'not-confirmed'}
+                      disabled={disabled}
                       onFocus={() => setHoveredTooltip(feedback)}
                       onBlur={() => setHoveredTooltip(null)}
                       onClick={() => handleFeedback(feedback)}

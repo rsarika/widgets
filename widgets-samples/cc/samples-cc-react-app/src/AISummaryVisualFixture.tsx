@@ -151,8 +151,7 @@ const createAISummary = (
     };
     return {
       ...(transfer ? {transfer: summary} : {consult: summary}),
-      requestMidCallSummary: async () => ({outcome: 'accepted' as const, revision: 1}),
-      sendMidCallSummaryBeforeAction: async () => ({outcome: 'sent' as const}),
+      requestMidCallSummary: async () => undefined,
     };
   }
 
@@ -167,10 +166,10 @@ const createAISummary = (
       onEdit,
       onCopy: () => true,
       onFeedback: () => true,
-      onRetry: async () => ({outcome: 'accepted', revision: 2}),
+      onRetry: async () => undefined,
       onCopyVisualStateChange: () => undefined,
     },
-    onPostCallReasonCommit: () => undefined,
+    requestPostCallSummary: () => undefined,
   };
 };
 

@@ -2,7 +2,6 @@ import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {RadioGroupNext as RadioGroup, TextInput} from '@momentum-ui/react-collaboration';
 import {Icon} from '@momentum-design/components/dist/react';
 import AISummary, {AI_SUMMARY_MESSAGES} from '../../../AISummary';
-import {useSummaryViewed} from '../../../AISummary/use-summary-viewed';
 import {CLEAR_SEARCH} from '../../constants';
 import {WrapUpSummaryProps, WrapUpSummaryReason} from './wrap-up-summary.types';
 import './wrap-up-summary.styles.scss';
@@ -39,13 +38,11 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   summary,
   initialReasonId,
   completionPending = false,
-  completionEscape = false,
   onReasonChange,
   onReasonCommit,
   onComplete,
 }) => {
   const headingId = useReactId();
-  const editSummary = useSummaryViewed(summary);
   const reasonListId = `${headingId}-reasons`;
   const [query, setQuery] = useState('');
   const [reasonListExpanded, setReasonListExpanded] = useState(false);
@@ -73,16 +70,9 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   const summaryControlsDisabled = Boolean(summary?.controlsDisabled);
   const completionInProgress = completionPending || localCompletionPending || completionPromiseRef.current !== null;
   const reasonControlsDisabled = completionInProgress || summaryControlsDisabled;
-  const requestPending = summary?.requestPending === true;
-  const reasonInteractionDisabled = reasonControlsDisabled || requestPending;
+  // The post-call request no longer depends on the reason, so a pending summary does not block reason selection.
   const areReasonControlsDisabled = () =>
     completionPending || localCompletionPending || completionPromiseRef.current !== null || summaryControlsDisabled;
-  const areReasonInteractionsBlocked = () =>
-    completionPending ||
-    localCompletionPending ||
-    completionPromiseRef.current !== null ||
-    summaryControlsDisabled ||
-    summary?.requestPending === true;
 
   const clearSummaryFocusSnapshot = () => {
     summaryFocusedControlRef.current = null;
@@ -138,7 +128,7 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   };
 
   const selectReason = (reasonId: string): ReasonSelection | null => {
-    if (areReasonInteractionsBlocked()) {
+    if (areReasonControlsDisabled()) {
       return null;
     }
     const reason = getReasonById(reasons, reasonId);
@@ -163,7 +153,7 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   };
 
   const commitReason = (selection = getCurrentSelection(), restoreFocusAfterCollapse = false) => {
-    if (areReasonInteractionsBlocked() || !selection || lastCommittedRevisionRef.current === selection.revision) {
+    if (areReasonControlsDisabled() || !selection || lastCommittedRevisionRef.current === selection.revision) {
       return;
     }
     lastCommittedRevisionRef.current = selection.revision;
@@ -187,11 +177,11 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
     if (!reasonId) {
       return;
     }
-    if (isNavigationKey && !areReasonInteractionsBlocked()) {
+    if (isNavigationKey && !areReasonControlsDisabled()) {
       reasonNavigationChangeRef.current = true;
       return;
     }
-    if (areReasonInteractionsBlocked()) {
+    if (areReasonControlsDisabled()) {
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -204,7 +194,7 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   };
 
   const handleReasonPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!areReasonInteractionsBlocked() || !getReasonIdFromInteractionTarget(event.target)) {
+    if (!areReasonControlsDisabled() || !getReasonIdFromInteractionTarget(event.target)) {
       return;
     }
     event.preventDefault();
@@ -213,7 +203,7 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
 
   const handleReasonClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const reasonId = getReasonIdFromInteractionTarget(event.target);
-    if (!reasonId || areReasonInteractionsBlocked()) {
+    if (!reasonId || areReasonControlsDisabled()) {
       return;
     }
     const selection = selectReason(reasonId);
@@ -262,13 +252,8 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
     );
   };
 
-  const summaryCompletionEscape = Boolean(summary?.completionEscape ?? completionEscape);
-  const initialGenerationPending = summary?.state === 'generating' && summary.requestPending === true;
-  const completeDisabled =
-    !selectedReason ||
-    completionInProgress ||
-    summaryControlsDisabled ||
-    Boolean(initialGenerationPending && !summaryCompletionEscape);
+  // As in Agent Desktop, a summary that is still generating does not hold back wrap-up.
+  const completeDisabled = !selectedReason || completionInProgress || summaryControlsDisabled;
 
   return (
     <section
@@ -303,7 +288,7 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
             </div>
             <div
               className="wrap-up-summary__reason-group"
-              aria-disabled={reasonInteractionDisabled ? 'true' : undefined}
+              aria-disabled={reasonControlsDisabled ? 'true' : undefined}
               onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                   commitReason();
@@ -376,8 +361,9 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
               feedbackStatus={summary.feedbackStatus}
               selectedFeedback={summary.selectedFeedback}
               requestPending={summary.requestPending}
-              controlsDisabled={summary.controlsDisabled}
-              onEdit={editSummary}
+              // The final response is taken when completion starts, so later edits would not be submitted.
+              controlsDisabled={summary.controlsDisabled || completionInProgress}
+              onEdit={summary.onEdit}
               onCopy={summary.onCopy}
               onFeedback={summary.onFeedback}
               onRetry={summary.onRetry}

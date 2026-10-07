@@ -47,7 +47,6 @@ const LITERAL_SUMMARY_COPY = {
   dislike: "This isn't helpful",
   retry: 'Retry',
   pendingSubmission: 'Pending submission',
-  submissionNotConfirmed: 'Submission not confirmed',
   completeWrapUp: 'Complete Wrap-Up',
 } as const;
 
@@ -1330,7 +1329,7 @@ describe('AISummary', () => {
     );
   });
 
-  it('paints post-call feedback immediately with pending/not-confirmed descriptions and removes them on success', () => {
+  it('paints post-call feedback immediately with the pending description and removes it once submitted', () => {
     const {rerender} = render(
       <AISummary
         mode="post-call"
@@ -1364,31 +1363,6 @@ describe('AISummary', () => {
         state="content"
         content={textContent}
         contentRevision={5}
-        feedbackStatus="not-confirmed"
-        selectedFeedback="like"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={jest.fn().mockReturnValue(true)}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-    expect(screen.getByText(AI_SUMMARY_MESSAGES.feedback.submissionNotConfirmed)).toBeInTheDocument();
-    expect(screen.getByText(AI_SUMMARY_MESSAGES.feedback.submissionNotConfirmed)).toHaveAttribute(
-      'id',
-      pendingDescriptionId
-    );
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toHaveAttribute(
-      'aria-describedby',
-      pendingDescriptionId
-    );
-
-    rerender(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={5}
         selectedFeedback="like"
         onEdit={jest.fn()}
         onCopy={jest.fn()}
@@ -1398,25 +1372,6 @@ describe('AISummary', () => {
       />
     );
     expect(screen.queryByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission)).not.toBeInTheDocument();
-    expect(screen.queryByText(AI_SUMMARY_MESSAGES.feedback.submissionNotConfirmed)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveAttribute('aria-describedby');
-
-    rerender(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={5}
-        selectedFeedback="like"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={jest.fn().mockReturnValue(true)}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-    expect(screen.queryByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission)).not.toBeInTheDocument();
-    expect(screen.queryByText(AI_SUMMARY_MESSAGES.feedback.submissionNotConfirmed)).not.toBeInTheDocument();
     expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveAttribute('aria-describedby');
   });
 

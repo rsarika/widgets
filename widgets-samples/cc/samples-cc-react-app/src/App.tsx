@@ -122,24 +122,24 @@ function App() {
     // SDK events, never these store records.
     aiSummaryE2EBridge.readSummaryState = () => ({
       agentId: store.agentId,
-      states: Object.values(store.aiSummaryOwnerStates).map((state) => ({
-        kind: state.kind,
-        role: state.role,
-        ownerKey: {...state.ownerKey},
-        counters: {...state.counters},
-        contentRevision: state.contentRevision,
-        feedbackStatus: state.feedbackStatus,
-      })),
-      pendingRequests: Object.keys(store.aiSummaryPendingRequests).length,
+      states: Object.entries(store.aiSummaries).flatMap(([interactionId, entries]) =>
+        Object.entries(entries).map(([role, entry]) => ({
+          interactionId,
+          role,
+          status: entry.status,
+          copied: entry.copied,
+          edited: entry.edited,
+          contentRevision: entry.revision,
+          feedback: entry.feedback,
+        }))
+      ),
+      pendingRequests: Object.values(store.aiSummaries).filter((entries) =>
+        Object.values(entries).some((entry) => entry.status === 'loading')
+      ).length,
     });
     aiSummaryE2EBridge.requestMidCallSummary = () => store.requestMidCallSummary('CONSULT');
     aiSummaryE2EBridge.registerAgent = () => store.store.registerCC(aiSummaryE2EBridge.webex);
-    aiSummaryE2EBridge.requestPostCallSummary = (selectionRevision) =>
-      store.requestPostCallSummary({
-        type: 'reason-commit',
-        reasonId: 'aux-code-billing-follow-up',
-        selectionRevision,
-      });
+    aiSummaryE2EBridge.requestPostCallSummary = () => store.requestPostCallSummary();
     return () => {
       delete aiSummaryE2EBridge.readSummaryState;
       delete aiSummaryE2EBridge.requestMidCallSummary;

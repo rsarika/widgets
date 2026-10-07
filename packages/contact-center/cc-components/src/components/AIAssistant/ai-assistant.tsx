@@ -337,7 +337,7 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   };
 
   const openReceiverSummary = () => {
-    if (!receiverSummary?.openReceiverSummary()) {
+    if (!receiverSummary) {
       return;
     }
     setActiveBranch('receiver-summary');

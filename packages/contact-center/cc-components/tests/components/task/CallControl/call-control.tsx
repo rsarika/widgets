@@ -91,7 +91,6 @@ describe('CallControlComponent', () => {
     contentRevision: 0,
     selectedFeedback: 'none' as const,
     requestPending: true,
-    completionEscape: false,
     onEdit: jest.fn().mockReturnValue(false),
     onCopy: jest.fn().mockReturnValue(false),
     onFeedback: jest.fn().mockReturnValue(false),
@@ -99,165 +98,6 @@ describe('CallControlComponent', () => {
     onCopyVisualStateChange: jest.fn(),
     ...overrides,
   });
-
-  const renderMidCallPreActionCase = (
-    action: 'transfer' | 'consult' | 'transferConference' | 'merge',
-    sendMidCallSummaryBeforeAction: jest.Mock
-  ) => {
-    const requestMidCallSummary = jest.fn().mockResolvedValue({outcome: 'accepted', revision: 22});
-
-    if (action === 'transfer') {
-      const transferCall = jest.fn();
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          transferCall={transferCall}
-          controls={{
-            ...createEnabledMainTaskUIControls(),
-            consultTransferDestinations: {
-              consult: [],
-              transfer: ['agent'],
-            },
-          }}
-          aiSummary={{
-            transfer: createMidCallSummary('TRANSFER', 22),
-            requestMidCallSummary,
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      return {
-        actionSpy: transferCall,
-        actionType: 'TRANSFER',
-        revision: 22,
-        activate: async () => {
-          fireEvent.click(screen.getByLabelText('Transfer'));
-          const selectAgent = await screen.findByLabelText('Select John Doe');
-          fireEvent.click(selectAgent);
-          fireEvent.click(selectAgent);
-        },
-      };
-    }
-
-    if (action === 'consult') {
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id: 'consult',
-          icon: 'consult',
-          tooltip: 'Consult',
-          className: 'call-control-button',
-          disabled: false,
-          menuType: 'Consult',
-          isVisible: true,
-          dataTestId: 'consult-button',
-        },
-      ]);
-      const consultCall = jest.fn();
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultCall={consultCall}
-          controls={{
-            ...createEnabledMainTaskUIControls({transfer: disabledControl}),
-            consultTransferDestinations: {
-              consult: ['agent'],
-              transfer: [],
-            },
-          }}
-          aiSummary={{
-            consult: createMidCallSummary('CONSULT', 23),
-            requestMidCallSummary,
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      return {
-        actionSpy: consultCall,
-        actionType: 'CONSULT',
-        revision: 23,
-        activate: async () => {
-          fireEvent.click(screen.getByLabelText('Consult'));
-          const selectAgent = await screen.findByLabelText('Select John Doe');
-          fireEvent.click(selectAgent);
-          fireEvent.click(selectAgent);
-        },
-      };
-    }
-
-    if (action === 'transferConference') {
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id: 'transferConsult',
-          icon: 'next-bold',
-          tooltip: 'Transfer Conference',
-          className: 'call-control-button',
-          disabled: false,
-          isVisible: true,
-        },
-      ]);
-      const consultTransfer = jest.fn();
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultTransfer={consultTransfer}
-          aiSummary={{
-            transfer: createMidCallSummary('TRANSFER', 24),
-            requestMidCallSummary,
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      return {
-        actionSpy: consultTransfer,
-        actionType: 'TRANSFER',
-        revision: 24,
-        activate: async () => {
-          fireEvent.click(screen.getByLabelText('Transfer Conference'));
-          const confirm = await screen.findByTestId('consult-transfer:existing-party-confirm');
-          fireEvent.click(confirm);
-          fireEvent.click(confirm);
-        },
-      };
-    }
-
-    jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-      {
-        id: 'conference',
-        icon: 'call-merge-bold',
-        tooltip: 'Merge',
-        className: 'call-control-button',
-        disabled: false,
-        isVisible: true,
-      },
-    ]);
-    const consultConference = jest.fn();
-    const screen = render(
-      <CallControlComponent
-        {...defaultProps}
-        consultConference={consultConference}
-        aiSummary={{
-          consult: createMidCallSummary('CONSULT', 25),
-          requestMidCallSummary,
-          sendMidCallSummaryBeforeAction,
-        }}
-      />
-    );
-
-    return {
-      actionSpy: consultConference,
-      actionType: 'CONSULT',
-      revision: 25,
-      activate: async () => {
-        fireEvent.click(screen.getByLabelText('Merge'));
-        const confirm = await screen.findByTestId('consult-transfer:existing-party-confirm');
-        fireEvent.click(confirm);
-        fireEvent.click(confirm);
-      },
-    };
-  };
 
   const defaultProps: CallControlComponentProps = {
     currentTask: mockCurrentTask,
@@ -414,7 +254,7 @@ describe('CallControlComponent', () => {
       expect(wrapupButton).toHaveTextContent('Wrap up');
     });
 
-    it('uses the projected post-call completion escape while retry is pending', async () => {
+    it('keeps Complete Wrap-Up available while the post-call summary is generating', async () => {
       const wrapupCall = jest.fn().mockResolvedValue({wrapup: 'succeeded', response: 'not-required'});
       const screen = render(
         <CallControlComponent
@@ -427,7 +267,6 @@ describe('CallControlComponent', () => {
               content: {type: 'text', summaryText: 'Customer issue was resolved.'},
               contentRevision: 5,
               requestPending: false,
-              completionEscape: true,
             }),
           }}
         />
@@ -442,7 +281,7 @@ describe('CallControlComponent', () => {
           wrapupCall={wrapupCall}
           controls={createEnabledMainTaskUIControls({wrapup: enabledControl})}
           aiSummary={{
-            postCall: createPostCallSummary({completionEscape: true}),
+            postCall: createPostCallSummary(),
           }}
         />
       );
@@ -469,6 +308,28 @@ describe('CallControlComponent', () => {
 
       expect(await screen.findByTestId('wrap-up-summary')).toBeInTheDocument();
       expect(screen.queryByTestId('call-control:wrapup-select')).not.toBeInTheDocument();
+    });
+
+    it('should request the post-call summary when the wrap-up popover opens, not when a reason is selected', async () => {
+      const requestPostCallSummary = jest.fn();
+      const screen = render(
+        <CallControlComponent
+          {...defaultProps}
+          controls={createEnabledMainTaskUIControls({wrapup: enabledControl})}
+          aiSummary={{
+            postCall: createPostCallSummary({state: 'omitted', requestPending: false}),
+            requestPostCallSummary,
+          }}
+        />
+      );
+      expect(requestPostCallSummary).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('call-control:wrapup-button'));
+      await screen.findByTestId('wrap-up-summary');
+      expect(requestPostCallSummary).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(await screen.findByRole('radio', {name: 'Customer Issue'}));
+      expect(requestPostCallSummary).toHaveBeenCalledTimes(1);
     });
 
     it('transitions post-call wrap-up branches in both directions while retaining the selected draft', async () => {
@@ -996,272 +857,75 @@ describe('CallControlComponent', () => {
       expect(requestMidCallSummary).toHaveBeenCalledWith('CONSULT');
     });
 
-    it.each([
-      {action: 'transfer' as const, settlement: 'sent' as const},
-      {action: 'consult' as const, settlement: 'failed' as const},
-      {action: 'transferConference' as const, settlement: 'blocked' as const},
-      {action: 'merge' as const, settlement: 'stale' as const},
-      {action: 'transfer' as const, settlement: 'rejected' as const},
-      {action: 'merge' as const, settlement: 'thrown' as const},
-    ])(
-      'delays $action telephony until a $settlement pre-action settlement and runs once',
-      async ({action, settlement}) => {
-        const response = deferred<{outcome: 'sent' | 'failed' | 'blocked' | 'stale'}>();
-        const sendMidCallSummaryBeforeAction = jest.fn(() => {
-          if (settlement === 'thrown') {
-            throw new Error('pre-action threw');
-          }
-          return response.promise;
-        });
-        const {actionSpy, actionType, revision, activate} = renderMidCallPreActionCase(
-          action,
-          sendMidCallSummaryBeforeAction
-        );
-
-        await activate();
-
-        await waitFor(() => expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1));
-        expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledWith(actionType, revision);
-        if (settlement !== 'thrown') {
-          expect(actionSpy).not.toHaveBeenCalled();
-        }
-
-        if (settlement === 'rejected') {
-          response.reject(new Error('pre-action rejected'));
-        } else if (settlement !== 'thrown') {
-          response.resolve({outcome: settlement});
-        }
-
-        await waitFor(() => expect(actionSpy).toHaveBeenCalledTimes(1));
-      }
-    );
-
-    it('keeps destination transfer telephony uncalled until the pre-action response settles and ignores re-entry', async () => {
-      const response = deferred<{outcome: 'sent'}>();
-      const sendMidCallSummaryBeforeAction = jest.fn().mockReturnValue(response.promise);
-      const transferCall = jest.fn();
-
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          transferCall={transferCall}
-          controls={{
-            ...createEnabledMainTaskUIControls(),
-            consultTransferDestinations: {
-              consult: [],
-              transfer: ['agent'],
-            },
-          }}
-          aiSummary={{
-            transfer: createMidCallSummary('TRANSFER', 14),
-            requestMidCallSummary: jest.fn().mockResolvedValue({outcome: 'accepted', revision: 14}),
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText('Transfer'));
-      const selectAgent = await screen.findByLabelText('Select John Doe');
-      fireEvent.click(selectAgent);
-      fireEvent.click(selectAgent);
-
-      await waitFor(() => expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1));
-      expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledWith('TRANSFER', 14);
-      expect(transferCall).not.toHaveBeenCalled();
-
-      response.resolve({outcome: 'sent'});
-      await waitFor(() => expect(transferCall).toHaveBeenCalledTimes(1));
-      expect(transferCall).toHaveBeenCalledWith('agent1', 'agent');
-    });
-
-    it('commits destination consult UI state only after async consult telephony fulfills', async () => {
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id: 'consult',
-          icon: 'consult',
-          tooltip: 'Consult',
-          className: 'call-control-button',
-          disabled: false,
-          menuType: 'Consult',
-          isVisible: true,
-          dataTestId: 'consult-button',
-        },
-      ]);
-      const response = deferred<{outcome: 'sent'}>();
-      const consult = deferred<void>();
-      const sendMidCallSummaryBeforeAction = jest.fn().mockReturnValue(response.promise);
-      const consultCall = jest.fn().mockReturnValue(consult.promise);
-      const setConsultAgentName = jest.fn();
-      const setLastTargetType = jest.fn();
-
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultCall={consultCall}
-          setConsultAgentName={setConsultAgentName}
-          setLastTargetType={setLastTargetType}
-          controls={{
-            ...createEnabledMainTaskUIControls({transfer: disabledControl}),
-            consultTransferDestinations: {
-              consult: ['agent'],
-              transfer: [],
-            },
-          }}
-          aiSummary={{
-            consult: createMidCallSummary('CONSULT', 18),
-            requestMidCallSummary: jest.fn().mockResolvedValue({outcome: 'accepted', revision: 18}),
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText('Consult'));
-      const selectAgent = await screen.findByLabelText('Select John Doe');
-      fireEvent.click(selectAgent);
-      fireEvent.click(selectAgent);
-
-      await waitFor(() => expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1));
-      expect(consultCall).not.toHaveBeenCalled();
-      expect(setConsultAgentName).not.toHaveBeenCalled();
-      expect(setLastTargetType).not.toHaveBeenCalled();
-
-      response.resolve({outcome: 'sent'});
-      await waitFor(() => expect(consultCall).toHaveBeenCalledTimes(1));
-      expect(consultCall).toHaveBeenCalledWith('agent1', 'agent', false);
-      expect(setConsultAgentName).not.toHaveBeenCalled();
-      expect(setLastTargetType).not.toHaveBeenCalled();
-
-      consult.resolve();
-      await waitFor(() => expect(setConsultAgentName).toHaveBeenCalledWith('John Doe'));
-      expect(setLastTargetType).toHaveBeenCalledWith('agent');
-    });
-
-    it('opens Transfer Conference summary confirmation and continues once after a non-sent response outcome', async () => {
-      const response = deferred<{outcome: 'blocked'}>();
-      const requestMidCallSummary = jest.fn().mockResolvedValue({outcome: 'accepted', revision: 15});
-      const sendMidCallSummaryBeforeAction = jest.fn().mockReturnValue(response.promise);
-      const consultTransfer = jest.fn();
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id: 'transferConsult',
-          icon: 'next-bold',
-          tooltip: 'Transfer Conference',
-          className: 'call-control-button',
-          disabled: false,
-          isVisible: true,
-        },
-      ]);
-
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultTransfer={consultTransfer}
-          aiSummary={{
-            transfer: createMidCallSummary('TRANSFER', 15),
-            requestMidCallSummary,
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText('Transfer Conference'));
-      const confirm = await screen.findByTestId('consult-transfer:existing-party-confirm');
-      await waitFor(() => expect(requestMidCallSummary).toHaveBeenCalledWith('TRANSFER'));
-      fireEvent.click(confirm);
-      fireEvent.click(confirm);
-
-      await waitFor(() => expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1));
-      expect(consultTransfer).not.toHaveBeenCalled();
-      response.resolve({outcome: 'blocked'});
-      await waitFor(() => expect(consultTransfer).toHaveBeenCalledTimes(1));
-    });
-
-    it('consumes existing-party async telephony rejection after the pre-action response settles', async () => {
-      const sendMidCallSummaryBeforeAction = jest.fn().mockResolvedValue({outcome: 'sent'});
-      const consultTransfer = jest.fn().mockRejectedValue(new Error('Transfer conference failed'));
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id: 'transferConsult',
-          icon: 'next-bold',
-          tooltip: 'Transfer Conference',
-          className: 'call-control-button',
-          disabled: false,
-          isVisible: true,
-        },
-      ]);
-
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultTransfer={consultTransfer}
-          aiSummary={{
-            transfer: createMidCallSummary('TRANSFER', 19),
-            requestMidCallSummary: jest.fn().mockResolvedValue({outcome: 'accepted', revision: 19}),
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText('Transfer Conference'));
-      fireEvent.click(await screen.findByTestId('consult-transfer:existing-party-confirm'));
-
-      await waitFor(() => expect(consultTransfer).toHaveBeenCalledTimes(1));
-      await waitFor(() =>
-        expect(mockLogger.error).toHaveBeenCalledWith(
-          'CC-Widgets: CallControl: Error running mid-call telephony action - Error: Transfer conference failed',
+    describe('mid-call summary request when the consult popover opens', () => {
+      const renderVoiceConsult = (aiSummary: CallControlComponentProps['aiSummary']) => {
+        jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
           {
-            module: 'call-control.tsx',
-            method: 'handleExistingPartyConfirm',
-          }
-        )
-      );
-    });
+            id: 'consult',
+            icon: 'consult',
+            tooltip: 'Consult',
+            className: 'call-control-button',
+            disabled: false,
+            menuType: 'Consult',
+            isVisible: true,
+            dataTestId: 'consult-button',
+          },
+        ]);
 
-    it('opens Merge summary confirmation without a new summary request and sends CONSULT before merge', async () => {
-      const sendMidCallSummaryBeforeAction = jest.fn().mockResolvedValue({outcome: 'sent'});
-      const requestMidCallSummary = jest.fn().mockResolvedValue({outcome: 'accepted', revision: 16});
-      const consultConference = jest.fn();
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id: 'conference',
-          icon: 'call-merge-bold',
-          tooltip: 'Merge',
-          className: 'call-control-button',
-          disabled: false,
-          isVisible: true,
-        },
-      ]);
+        return render(
+          <CallControlComponent
+            {...defaultProps}
+            controls={{
+              ...createEnabledMainTaskUIControls({transfer: disabledControl}),
+              consultTransferDestinations: {
+                consult: ['agent'],
+                transfer: [],
+              },
+            }}
+            aiSummary={aiSummary}
+          />
+        );
+      };
 
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultConference={consultConference}
-          aiSummary={{
-            consult: createMidCallSummary('CONSULT', 16),
-            requestMidCallSummary,
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
+      it('should request a fresh summary every time the popover opens', async () => {
+        const requestMidCallSummary = jest.fn().mockResolvedValue({outcome: 'accepted'});
+        const screen = renderVoiceConsult({consult: createMidCallSummary('CONSULT', 3), requestMidCallSummary});
+        const consultButton = screen.getByLabelText('Consult');
 
-      fireEvent.click(screen.getByLabelText('Merge'));
-      fireEvent.click(await screen.findByTestId('consult-transfer:existing-party-confirm'));
+        fireEvent.click(consultButton);
+        await waitFor(() => expect(requestMidCallSummary).toHaveBeenCalledTimes(1));
 
-      await waitFor(() => expect(consultConference).toHaveBeenCalledTimes(1));
-      expect(requestMidCallSummary).not.toHaveBeenCalled();
-      expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledWith('CONSULT', 16);
+        fireEvent.click(await screen.findByLabelText('Close popover'));
+        await waitFor(() => expect(screen.queryByLabelText('Close popover')).not.toBeInTheDocument());
+        fireEvent.click(consultButton);
+
+        await waitFor(() => expect(requestMidCallSummary).toHaveBeenCalledTimes(2));
+        expect(requestMidCallSummary).toHaveBeenNthCalledWith(2, 'CONSULT');
+      });
     });
 
     it.each([
-      {id: 'transferConsult', label: 'Transfer Conference', summaryKey: 'transfer', action: 'TRANSFER'},
-      {id: 'conference', label: 'Merge', summaryKey: 'consult', action: 'CONSULT'},
+      {
+        id: 'transferConsult',
+        label: 'Transfer Conference',
+        summaryKey: 'transfer',
+        action: 'TRANSFER',
+        withSummary: true,
+      },
+      {id: 'conference', label: 'Merge', summaryKey: 'consult', action: 'CONSULT', withSummary: true},
+      {
+        id: 'transferConsult',
+        label: 'Transfer Conference',
+        summaryKey: 'transfer',
+        action: 'TRANSFER',
+        withSummary: false,
+      },
+      {id: 'conference', label: 'Merge', summaryKey: 'consult', action: 'CONSULT', withSummary: false},
     ] as const)(
-      'prepares an eligible fresh $label summary and guards its confirmation',
-      async ({id, label, summaryKey, action}) => {
+      'should run $label immediately without a summary popover (summary available: $withSummary)',
+      ({id, label, summaryKey, action, withSummary}) => {
         const telephony = jest.fn();
-        const requestMidCallSummary = jest.fn().mockResolvedValue({outcome: 'accepted', revision: 25});
-        const response = deferred<{outcome: 'sent'}>();
-        const sendMidCallSummaryBeforeAction = jest.fn().mockReturnValue(response.promise);
+        const requestMidCallSummary = jest.fn();
         jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
           {
             id,
@@ -1273,85 +937,26 @@ describe('CallControlComponent', () => {
             isVisible: true,
           },
         ]);
-        const component = (state: 'omitted' | 'generating' | 'content', requestPending = false) => (
+
+        const screen = render(
           <CallControlComponent
             {...defaultProps}
             consultTransfer={telephony}
             consultConference={telephony}
             aiSummary={{
-              [summaryKey]: {
-                ...createMidCallSummary(action, 25),
-                state,
-                requestPending,
-              },
+              ...(withSummary ? {[summaryKey]: createMidCallSummary(action, 25)} : {}),
               requestMidCallSummary,
-              sendMidCallSummaryBeforeAction,
             }}
           />
         );
-        const screen = render(component('omitted'));
 
         fireEvent.click(screen.getByLabelText(label));
-        await waitFor(() => expect(requestMidCallSummary).toHaveBeenCalledWith(action));
-        expect(telephony).not.toHaveBeenCalled();
 
-        screen.rerender(component('generating', true));
-        const confirm = await screen.findByTestId('consult-transfer:existing-party-confirm');
-        expect(confirm).toHaveAttribute('aria-disabled', 'true');
-        fireEvent.click(confirm);
-        expect(sendMidCallSummaryBeforeAction).not.toHaveBeenCalled();
-        expect(telephony).not.toHaveBeenCalled();
-
-        screen.rerender(component('content'));
-        fireEvent.click(confirm);
-        fireEvent.click(confirm);
-        await waitFor(() => expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledTimes(1));
-        expect(sendMidCallSummaryBeforeAction).toHaveBeenCalledWith(action, 25);
-        expect(telephony).not.toHaveBeenCalled();
-        response.resolve({outcome: 'sent'});
-        await waitFor(() => expect(telephony).toHaveBeenCalledTimes(1));
-        expect(requestMidCallSummary).toHaveBeenCalledTimes(1);
+        expect(telephony).toHaveBeenCalledTimes(1);
+        expect(requestMidCallSummary).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('consult-transfer:summary')).not.toBeInTheDocument();
       }
     );
-
-    it.each([
-      {id: 'transferConsult', label: 'Transfer Conference'},
-      {id: 'conference', label: 'Merge'},
-    ])('keeps absent/ineligible $label summaries on the immediate legacy path', ({id, label}) => {
-      const telephony = jest.fn();
-      const requestMidCallSummary = jest.fn();
-      const sendMidCallSummaryBeforeAction = jest.fn();
-      jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([
-        {
-          id,
-          icon: 'next-bold',
-          tooltip: label,
-          onClick: telephony,
-          className: 'call-control-button',
-          disabled: false,
-          isVisible: true,
-        },
-      ]);
-
-      const screen = render(
-        <CallControlComponent
-          {...defaultProps}
-          consultTransfer={telephony}
-          consultConference={telephony}
-          aiSummary={{
-            requestMidCallSummary,
-            sendMidCallSummaryBeforeAction,
-          }}
-        />
-      );
-
-      fireEvent.click(screen.getByLabelText(label));
-
-      expect(telephony).toHaveBeenCalledTimes(1);
-      expect(requestMidCallSummary).not.toHaveBeenCalled();
-      expect(sendMidCallSummaryBeforeAction).not.toHaveBeenCalled();
-      expect(screen.queryByTestId('consult-transfer:existing-party-confirm')).not.toBeInTheDocument();
-    });
 
     it('hides Dial Number and Entry Point tabs for non-telephony media', async () => {
       jest.spyOn(callControlUtils, 'filterButtonsForConsultation').mockReturnValue([

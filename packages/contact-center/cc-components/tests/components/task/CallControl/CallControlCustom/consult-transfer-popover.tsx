@@ -9,11 +9,7 @@ import {
   EntryPointRecord,
   TaskUIControls,
 } from '@webex/cc-store';
-import {
-  DEFAULT_PAGE_SIZE,
-  NO_DATA_AVAILABLE_CONSULT_TRANSFER,
-  SEARCH_PLACEHOLDER,
-} from '../../../../../src/components/task/constants';
+import {DEFAULT_PAGE_SIZE, SEARCH_PLACEHOLDER} from '../../../../../src/components/task/constants';
 import {AI_SUMMARY_MESSAGES} from '../../../../../src/components/AISummary';
 
 type AvailableDestinations = TaskUIControls['consultTransferDestinations']['consult'];
@@ -704,33 +700,10 @@ describe('ConsultTransferPopoverComponent', () => {
       contentRevision: 18,
       actionType: 'CONSULT' as const,
       selectedFeedback: 'none' as const,
-      onViewed: jest.fn().mockReturnValue(true),
       onEdit: jest.fn(),
       onCopy: jest.fn().mockReturnValue(true),
       onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
       ...overrides,
-    });
-
-    it('auto-starts the matching mid-call summary request and observes rejection', async () => {
-      const requestMidCallSummary = jest.fn().mockRejectedValue(new Error('transport'));
-
-      render(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          heading="Transfer"
-          action="Transfer"
-          isTelephony
-          requestMidCallSummary={requestMidCallSummary}
-        />
-      );
-
-      await waitFor(() => expect(requestMidCallSummary).toHaveBeenCalledWith('TRANSFER'));
-      await waitFor(() =>
-        expect(loggerMock.warn).toHaveBeenCalledWith('CC-Widgets: CallControl: AI summary request did not complete', {
-          module: 'consult-transfer-popover.tsx',
-          method: 'requestMidCallSummary',
-        })
-      );
     });
 
     it('renders the summary after the destination results without replacing the single search/results tree', async () => {
@@ -744,7 +717,6 @@ describe('ConsultTransferPopoverComponent', () => {
             contentRevision: 11,
             actionType: 'CONSULT',
             selectedFeedback: 'none',
-            onViewed: jest.fn().mockReturnValue(true),
             onEdit: jest.fn(),
             onCopy: jest.fn().mockReturnValue(true),
             onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
@@ -760,9 +732,7 @@ describe('ConsultTransferPopoverComponent', () => {
     });
 
     it('preserves the open destination tree, query, selected category and focus when the summary arrives and is revoked', async () => {
-      const view = render(
-        <ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony requestSummaryOnOpen={false} />
-      );
+      const view = render(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony />);
       const queueRadio = view.getByRole('radio', {name: 'Queues'});
       fireEvent.click(queueRadio);
       await waitFor(() => expect(view.getByText('Queue One')).toBeInTheDocument());
@@ -782,15 +752,7 @@ describe('ConsultTransferPopoverComponent', () => {
       expect(queueAction).toHaveFocus();
 
       const summary = createSummary({contentRevision: 41});
-      view.rerender(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          heading="Consult"
-          isTelephony
-          requestSummaryOnOpen={false}
-          summary={summary}
-        />
-      );
+      view.rerender(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony summary={summary} />);
 
       expect(view.getByTestId('consult-transfer:summary')).toBeInTheDocument();
       expect(view.getByRole('radio', {name: 'Queues'})).toBe(queueRadio);
@@ -801,9 +763,7 @@ describe('ConsultTransferPopoverComponent', () => {
       expect(queueRadio).toBeChecked();
       expect(queueAction).toHaveFocus();
 
-      view.rerender(
-        <ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony requestSummaryOnOpen={false} />
-      );
+      view.rerender(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony />);
 
       expect(view.queryByTestId('consult-transfer:summary')).not.toBeInTheDocument();
       expect(view.getByRole('radio', {name: 'Queues'})).toBe(queueRadio);
@@ -853,91 +813,16 @@ describe('ConsultTransferPopoverComponent', () => {
       expect(renderTitles(nonVoice.container)).toEqual(voiceTitles);
     });
 
-    it('records content reveals once per visible revision per popover opening', async () => {
-      const onViewed = jest.fn().mockReturnValue(true);
-      const summary = createSummary({onViewed});
-      const view = render(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" summary={summary} />);
-
-      await waitFor(() => expect(onViewed).toHaveBeenCalledWith(18));
-      expect(onViewed).toHaveBeenCalledTimes(1);
-
-      view.rerender(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" summary={{...summary}} />);
-      expect(onViewed).toHaveBeenCalledTimes(1);
-
-      view.rerender(
-        <ConsultTransferPopoverComponent {...baseProps} heading="Consult" summary={{...summary, contentRevision: 19}} />
-      );
-
-      await waitFor(() => expect(onViewed).toHaveBeenCalledTimes(2));
-      expect(onViewed).toHaveBeenLastCalledWith(19);
-
-      view.rerender(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          heading="Consult"
-          summary={{...summary, state: 'generating' as const, contentRevision: 20}}
-        />
-      );
-      expect(onViewed).toHaveBeenCalledTimes(2);
-
-      view.unmount();
-      render(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" summary={summary} />);
-      await waitFor(() => expect(onViewed).toHaveBeenCalledTimes(3));
-    });
-
-    it('does not count an accepted local edit as a view but counts the next generated revision', () => {
-      const onViewed = jest.fn().mockReturnValue(true);
-      const initial = createSummary({onViewed, content: {type: 'text', summaryText: 'Initial summary'}});
-      let publish: React.Dispatch<React.SetStateAction<typeof initial>> = () => undefined;
-      const Harness = () => {
-        const [summary, setSummary] = React.useState(initial);
-        publish = setSummary;
-        return (
-          <ConsultTransferPopoverComponent
-            {...baseProps}
-            heading="Consult"
-            summary={{
-              ...summary,
-              onEdit: (field, revision) => {
-                setSummary({
-                  ...summary,
-                  contentRevision: revision + 1,
-                  content: {type: 'text', summaryText: field.value},
-                });
-                return true;
-              },
-            }}
-          />
-        );
-      };
-      const view = render(<Harness />);
-      expect(onViewed.mock.calls).toEqual([[18]]);
-      fireEvent.change(view.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.plainSummary}), {
-        target: {value: 'Local edit'},
-      });
-      expect(onViewed.mock.calls).toEqual([[18]]);
-      act(() =>
-        publish({...initial, contentRevision: 20, content: {type: 'text', summaryText: 'New generated summary'}})
-      );
-      expect(onViewed.mock.calls).toEqual([[18], [20]]);
-    });
-
-    it('keeps pending destination and quick actions focusable but inert', async () => {
+    it('should let the agent pick a destination or quick action while a refreshed summary is generating', async () => {
       const summary = createSummary({requestPending: true});
       const view = render(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" summary={summary} />);
       const firstAgentButton = view.container.querySelector(
         'button[aria-label="Select Agent One"]'
       ) as HTMLButtonElement;
 
-      expect(firstAgentButton).toHaveAttribute('aria-disabled', 'true');
-      expect(firstAgentButton).not.toBeDisabled();
-
-      act(() => {
-        firstAgentButton.focus();
-      });
+      expect(firstAgentButton).not.toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(firstAgentButton);
-      expect(firstAgentButton).toHaveFocus();
-      expect(mockOnAgentSelect).not.toHaveBeenCalled();
+      expect(mockOnAgentSelect).toHaveBeenCalledWith('agent1', 'Agent One', false);
 
       fireEvent.click(view.getByRole('button', {name: 'Dial Number'}));
       const input = view.getByRole('textbox', {
@@ -946,57 +831,10 @@ describe('ConsultTransferPopoverComponent', () => {
       fireEvent.change(input, {target: {value: '1234'}});
 
       const quickAction = await view.findByTestId('consult-quick-action:consult');
-      expect(quickAction).toHaveAttribute('aria-disabled', 'true');
-      expect(quickAction).not.toBeDisabled();
-
-      act(() => {
-        quickAction.focus();
-      });
+      expect(quickAction).not.toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(quickAction);
 
-      expect(quickAction).toHaveFocus();
-      expect(baseProps.onDialNumberSelect).not.toHaveBeenCalled();
-    });
-
-    it.each([
-      ['Consult', 'CONSULT'],
-      ['Transfer', 'TRANSFER'],
-    ] as const)('shows a first pending %s summary and keeps destination activation inert', (heading, actionType) => {
-      const onAgentSelect = jest.fn();
-      const summary = createSummary({
-        state: 'generating' as const,
-        content: {type: 'text' as const, summaryText: ''},
-        contentRevision: 0,
-        actionType,
-        requestPending: true,
-        controlsDisabled: true,
-      });
-      const view = render(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          heading={heading}
-          action={heading}
-          onAgentSelect={onAgentSelect}
-          summary={summary}
-        />
-      );
-      const firstAgentButton = view.container.querySelector(
-        'button[aria-label="Select Agent One"]'
-      ) as HTMLButtonElement;
-
-      expect(view.getByTestId('consult-transfer:summary')).toHaveTextContent(AI_SUMMARY_MESSAGES.generatingTitle);
-      expect(firstAgentButton).toHaveAttribute('aria-disabled', 'true');
-      expect(firstAgentButton).not.toBeDisabled();
-
-      act(() => {
-        firstAgentButton.focus();
-      });
-      fireEvent.keyDown(firstAgentButton, {key: 'Enter', code: 'Enter'});
-      fireEvent.keyUp(firstAgentButton, {key: 'Enter', code: 'Enter'});
-      fireEvent.click(firstAgentButton);
-
-      expect(firstAgentButton).toHaveFocus();
-      expect(onAgentSelect).not.toHaveBeenCalled();
+      expect(baseProps.onDialNumberSelect).toHaveBeenCalled();
     });
 
     it('uses the provisional transfer heading only for transfer preparations', () => {
@@ -1011,7 +849,6 @@ describe('ConsultTransferPopoverComponent', () => {
             contentRevision: 0,
             actionType: 'TRANSFER',
             selectedFeedback: 'none',
-            onViewed: jest.fn().mockReturnValue(true),
             onEdit: jest.fn(),
             onCopy: jest.fn().mockReturnValue(false),
             onFeedback: jest.fn().mockResolvedValue({outcome: 'blocked'}),
@@ -1030,7 +867,6 @@ describe('ConsultTransferPopoverComponent', () => {
         contentRevision: 12,
         actionType: 'CONSULT' as const,
         selectedFeedback: 'none' as const,
-        onViewed: jest.fn().mockReturnValue(true),
         onEdit: jest.fn(),
         onCopy: jest.fn().mockReturnValue(true),
         onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
@@ -1154,92 +990,6 @@ describe('ConsultTransferPopoverComponent', () => {
 
       await waitFor(() => expect(opener).toHaveFocus());
       expect(view.queryByText('Agent One')).not.toBeInTheDocument();
-    });
-
-    it('renders the existing-party action variant without destination controls and guards pending confirmation', async () => {
-      const onExistingPartyConfirm = jest.fn();
-      const requestMidCallSummary = jest.fn().mockResolvedValue({outcome: 'accepted', revision: 18});
-      const summary = {
-        state: 'content' as const,
-        content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
-        contentRevision: 18,
-        actionType: 'TRANSFER' as const,
-        selectedFeedback: 'none' as const,
-        onViewed: jest.fn().mockReturnValue(true),
-        onEdit: jest.fn(),
-        onCopy: jest.fn().mockReturnValue(true),
-        onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
-      };
-      const view = render(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          destinationLayout="existing-party-action"
-          heading="Transfer Conference"
-          action="Transfer"
-          availableDestinations={[]}
-          summary={summary}
-          requestMidCallSummary={requestMidCallSummary}
-          existingPartyConfirmLabel="Transfer Conference"
-          onExistingPartyConfirm={onExistingPartyConfirm}
-        />
-      );
-
-      expect(view.queryByRole('radiogroup')).not.toBeInTheDocument();
-      expect(
-        view.queryByRole('textbox', {name: AI_SUMMARY_MESSAGES.midCall.searchDestinations})
-      ).not.toBeInTheDocument();
-      expect(view.queryByText(NO_DATA_AVAILABLE_CONSULT_TRANSFER)).not.toBeInTheDocument();
-      expect(view.getByTestId('consult-transfer:summary')).toBeInTheDocument();
-      await waitFor(() => expect(requestMidCallSummary).toHaveBeenCalledWith('TRANSFER'));
-
-      fireEvent.click(view.getByTestId('consult-transfer:existing-party-confirm'));
-      expect(onExistingPartyConfirm).toHaveBeenCalledTimes(1);
-
-      view.rerender(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          destinationLayout="existing-party-action"
-          heading="Transfer Conference"
-          action="Transfer"
-          availableDestinations={[]}
-          summary={summary}
-          requestMidCallSummary={requestMidCallSummary}
-          existingPartyConfirmLabel="Transfer Conference"
-          onExistingPartyConfirm={onExistingPartyConfirm}
-          isActionPending
-        />
-      );
-
-      const pendingConfirm = view.getByTestId('consult-transfer:existing-party-confirm');
-      expect(pendingConfirm).toHaveAttribute('aria-disabled', 'true');
-      fireEvent.click(pendingConfirm);
-      expect(onExistingPartyConfirm).toHaveBeenCalledTimes(1);
-
-      view.rerender(
-        <ConsultTransferPopoverComponent
-          {...baseProps}
-          destinationLayout="existing-party-action"
-          heading="Transfer Conference"
-          action="Transfer"
-          availableDestinations={[]}
-          summary={{...summary, requestPending: true}}
-          requestMidCallSummary={requestMidCallSummary}
-          existingPartyConfirmLabel="Transfer Conference"
-          onExistingPartyConfirm={onExistingPartyConfirm}
-        />
-      );
-
-      const requestPendingConfirm = view.getByTestId('consult-transfer:existing-party-confirm');
-      expect(requestPendingConfirm).toHaveAttribute('aria-disabled', 'true');
-      expect(requestPendingConfirm).not.toBeDisabled();
-
-      act(() => {
-        requestPendingConfirm.focus();
-      });
-      fireEvent.click(requestPendingConfirm);
-
-      expect(requestPendingConfirm).toHaveFocus();
-      expect(onExistingPartyConfirm).toHaveBeenCalledTimes(1);
     });
   });
 });

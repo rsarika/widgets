@@ -47,7 +47,6 @@ describe('useAiAssistant', () => {
       selectedFeedback: 'none' as const,
       midCallFeedbackPending: false,
       controlsDisabled: false,
-      openReceiverSummary: jest.fn().mockReturnValue(true),
       recordReceiverSummaryCopied: jest.fn().mockReturnValue(true),
       setReceiverSummaryFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed' as const}),
     };

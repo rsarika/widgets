@@ -45,7 +45,7 @@ const createSummary = (overrides: Partial<WrapUpSummaryView> = {}): WrapUpSummar
   onEdit: jest.fn().mockReturnValue(true),
   onCopy: jest.fn().mockReturnValue(true),
   onFeedback: jest.fn().mockReturnValue(true),
-  onRetry: jest.fn().mockResolvedValue({outcome: 'blocked'}),
+  onRetry: jest.fn().mockResolvedValue(undefined),
   onCopyVisualStateChange: jest.fn(),
   ...overrides,
 });
@@ -142,67 +142,6 @@ describe('WrapUpSummary', () => {
     expect(screen.getByRole('radio', {name: 'Resolved'})).toBeInTheDocument();
   });
 
-  it('records post-call reveals but does not count accepted local edits as additional views', () => {
-    const onViewed = jest.fn().mockReturnValue(true);
-    const initial = createSummary({content: {type: 'text', summaryText: 'Initial summary'}});
-    let publish: React.Dispatch<React.SetStateAction<typeof initial>> = () => undefined;
-    const Harness = () => {
-      const [summary, setSummary] = React.useState(initial);
-      publish = setSummary;
-      const summaryWithTracking = {
-        ...summary,
-        onViewed,
-        onEdit: (field: Parameters<WrapUpSummaryView['onEdit']>[0], revision: number) => {
-          setSummary({...summary, contentRevision: revision + 1, content: {type: 'text', summaryText: field.value}});
-          return true;
-        },
-      };
-      return (
-        <WrapUpSummary
-          reasons={reasons}
-          summary={summaryWithTracking}
-          onReasonCommit={jest.fn()}
-          onComplete={jest.fn()}
-        />
-      );
-    };
-    const view = render(<Harness />);
-    expect(onViewed.mock.calls).toEqual([[6]]);
-    fireEvent.change(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.plainSummary}), {
-      target: {value: 'Local edit'},
-    });
-    expect(onViewed.mock.calls).toEqual([[6]]);
-    act(() => publish({...initial, contentRevision: 8, state: 'generating'}));
-    expect(onViewed.mock.calls).toEqual([[6]]);
-    act(() => publish({...initial, contentRevision: 9, content: {type: 'text', summaryText: 'New generated summary'}}));
-    expect(onViewed.mock.calls).toEqual([[6], [9]]);
-    view.unmount();
-    render(<Harness />);
-    expect(onViewed.mock.calls).toEqual([[6], [9], [6]]);
-  });
-
-  it('does not suppress a generated revision after a rejected edit', () => {
-    const onViewed = jest.fn().mockReturnValue(true);
-    const summary = {
-      ...createSummary({content: {type: 'text', summaryText: 'Initial'}}),
-      onViewed,
-      onEdit: jest.fn().mockReturnValue(false),
-    };
-    const props = {reasons, onReasonCommit: jest.fn(), onComplete: jest.fn()};
-    const {rerender} = render(<WrapUpSummary {...props} summary={summary} />);
-    fireEvent.change(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.plainSummary}), {
-      target: {value: 'Rejected'},
-    });
-    expect(summary.onEdit).toHaveBeenCalledWith({key: 'summaryText', value: 'Rejected'}, 6);
-    rerender(
-      <WrapUpSummary
-        {...props}
-        summary={{...summary, contentRevision: 7, content: {type: 'text', summaryText: 'Generated'}}}
-      />
-    );
-    expect(onViewed.mock.calls).toEqual([[6], [7]]);
-  });
-
   it('commits only the final selected reason after roving-focus arrow traversal and blur', () => {
     const onReasonChange = jest.fn();
     const onReasonCommit = jest.fn();
@@ -270,7 +209,7 @@ describe('WrapUpSummary', () => {
     expect(onReasonCommit).toHaveBeenLastCalledWith({id: 'aux-1', name: 'Resolved'}, 3);
   });
 
-  it('blocks reason selection and commits while a summary request is pending without dropping focus', () => {
+  it('should let the agent select and commit a reason while the summary is still generating', () => {
     const onReasonChange = jest.fn();
     const onReasonCommit = jest.fn();
     render(
@@ -283,69 +222,24 @@ describe('WrapUpSummary', () => {
       />
     );
 
-    const firstReason = screen.getByRole('radio', {name: 'Resolved'});
+    const reasonGroup = screen.getByRole('radiogroup', {name: REASON_GROUP_NAME});
     const secondReason = screen.getByRole('radio', {name: 'Follow up needed'});
-    act(() => {
-      firstReason.focus();
-    });
+    expect(reasonGroup.parentElement).not.toHaveAttribute('aria-disabled');
 
-    expect(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}).parentElement).toHaveAttribute(
-      'aria-disabled',
-      'true'
-    );
-    expect(fireEvent.pointerDown(secondReason)).toBe(false);
-    expect(firstReason).toHaveFocus();
     fireEvent.click(secondReason);
-    act(() => {
-      firstReason.focus();
-    });
-    pressFocusedReasonKey(' ');
-    pressFocusedReasonKey('ArrowDown');
-    fireEvent.blur(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}), {
-      relatedTarget: null,
-    });
+    fireEvent.blur(reasonGroup, {relatedTarget: null});
 
-    expect(firstReason).toHaveFocus();
-    expect(secondReason).not.toBeChecked();
-    expect(onReasonChange).not.toHaveBeenCalled();
-    expect(onReasonCommit).not.toHaveBeenCalled();
+    expect(secondReason).toBeChecked();
+    expect(onReasonChange).toHaveBeenCalledWith(expect.objectContaining({name: 'Follow up needed'}), 1);
+    expect(onReasonCommit).toHaveBeenCalledWith(expect.objectContaining({name: 'Follow up needed'}), 1);
   });
 
-  it('keeps Complete Wrap-Up enabled after a terminal summary error during retry when completion escape is set', () => {
+  it('should not hold back Complete Wrap-Up while the summary is generating', () => {
     const onComplete = jest.fn();
     render(
       <WrapUpSummary
         reasons={reasons}
-        summary={createSummary({state: 'generating', requestPending: true, completionEscape: true})}
-        initialReasonId="aux-1"
-        onReasonCommit={jest.fn()}
-        onComplete={onComplete}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL}));
-    expect(onComplete).toHaveBeenCalledWith({id: 'aux-1', name: 'Resolved'});
-  });
-
-  it('defers completion only for pending initial generation without retained content', () => {
-    const onComplete = jest.fn();
-    const {rerender} = render(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary({state: 'generating', requestPending: true, completionEscape: false})}
-        initialReasonId="aux-1"
-        onReasonCommit={jest.fn()}
-        onComplete={onComplete}
-      />
-    );
-
-    const complete = screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
-    expect(complete).toBeDisabled();
-
-    rerender(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary({state: 'content', requestPending: true, completionEscape: false})}
+        summary={createSummary({state: 'generating', requestPending: true})}
         initialReasonId="aux-1"
         onReasonCommit={jest.fn()}
         onComplete={onComplete}
@@ -388,8 +282,8 @@ describe('WrapUpSummary', () => {
     expect(onComplete).toHaveBeenCalledWith({id: 'aux-1', name: 'Resolved'});
   });
 
-  it('projects pending and not-confirmed feedback descriptions from the shared summary component', () => {
-    const {rerender} = render(
+  it('projects the pending feedback description from the shared summary component', () => {
+    render(
       <WrapUpSummary
         reasons={reasons}
         summary={createSummary({feedbackStatus: 'pending', selectedFeedback: 'like'})}
@@ -399,17 +293,6 @@ describe('WrapUpSummary', () => {
     );
 
     expect(screen.getByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission)).toBeInTheDocument();
-
-    rerender(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary({feedbackStatus: 'not-confirmed', selectedFeedback: 'dislike'})}
-        onReasonCommit={jest.fn()}
-        onComplete={jest.fn()}
-      />
-    );
-
-    expect(screen.getByText(AI_SUMMARY_MESSAGES.feedback.submissionNotConfirmed)).toBeInTheDocument();
   });
 
   it('blocks local completion re-entry until a rejected completion settles', async () => {
@@ -449,11 +332,39 @@ describe('WrapUpSummary', () => {
     await waitFor(() => expect(complete).not.toBeDisabled());
   });
 
-  it('makes the frozen not-confirmed selection read-only', () => {
+  it('should keep the summary read-only while wrap-up completion is in progress', async () => {
+    const completion = deferred<void>();
     render(
       <WrapUpSummary
         reasons={reasons}
-        summary={createSummary({controlsDisabled: true, feedbackStatus: 'not-confirmed', selectedFeedback: 'like'})}
+        summary={createSummary()}
+        initialReasonId="aux-1"
+        onReasonCommit={jest.fn()}
+        onComplete={jest.fn().mockReturnValue(completion.promise)}
+      />
+    );
+    const editInitialReason = screen.getByRole('button', {
+      name: AI_SUMMARY_MESSAGES.editSectionLabel(AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason),
+    });
+    expect(editInitialReason).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL}));
+
+    await waitFor(() => expect(editInitialReason).toBeDisabled());
+    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toBeDisabled();
+
+    await act(async () => {
+      completion.resolve(undefined);
+      await completion.promise;
+    });
+    await waitFor(() => expect(editInitialReason).not.toBeDisabled());
+  });
+
+  it('makes a summary with disabled controls read-only', () => {
+    render(
+      <WrapUpSummary
+        reasons={reasons}
+        summary={createSummary({controlsDisabled: true, selectedFeedback: 'like'})}
         onReasonCommit={jest.fn()}
         onComplete={jest.fn()}
       />

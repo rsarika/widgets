@@ -507,8 +507,12 @@ describe('ai-summary-sdk-lock UX admission', () => {
 
     const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-summary-linked-worktree-'));
     fs.rmSync(targetRoot, {recursive: true, force: true});
+    // Git hooks export a relative GIT_INDEX_FILE, which cannot resolve inside the new linked worktree.
+    const env = {...process.env};
+    delete env.GIT_INDEX_FILE;
     childProcess.execFileSync('git', ['worktree', 'add', '-b', 'ux-target', targetRoot, 'HEAD'], {
       cwd: sourceRoot,
+      env,
       stdio: 'ignore',
     });
     roots.push(targetRoot);
@@ -2121,6 +2125,7 @@ describe('ai-summary-sdk-lock UX admission', () => {
           contractPackageRoot = packageRoot;
           throw new LockToolError('sdk-contract-suite-failed', 'contract failed');
         },
+        nodeVersion: '22.14.0',
       })
     ).rejects.toThrow(LockToolError);
 

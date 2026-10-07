@@ -135,6 +135,7 @@ type ApiAIAssistantRuntime = {
   resolveFromRtdEvent: (rtdEventType: string, correlationId: string, payload: AISummary) => 'resolved' | 'not-found';
   clearAllRtdRequests: () => void;
   pendingRtdRequests: Map<string, unknown>;
+  setAIFeatureFlags: (aiFeature: {generatedSummaries: GeneratedSummaryFlags}) => void;
 };
 
 type ApiAIAssistantConstructor = new (webex: FakeWebex) => ApiAIAssistantRuntime;
@@ -156,12 +157,7 @@ type TaskDataLike = {
 };
 
 type SdkTaskRuntime = ITask & {
-  configureAISummary: (
-    apiAIAssistant: ApiAIAssistantRuntime,
-    getGeneratedSummaryFlags: () => GeneratedSummaryFlags
-  ) => void;
-  setFeatureEnablement: (enablement: AISummaryFeatureEnablement, emitEvent?: boolean) => void;
-  emitPendingFeatureEnablement: () => void;
+  setFeatureEnablement: (enablement: AISummaryFeatureEnablement) => void;
   clearFeatureEnablement: () => void;
   emit: (eventName: string, payload: unknown) => boolean;
   listenerCount: (eventName: string) => number;
@@ -175,7 +171,8 @@ type TaskConstructor = new (
   uiControlConfig: Record<string, unknown>,
   wrapupData: unknown,
   agentId: string,
-  agentName: string
+  agentName: string,
+  apiAIAssistant?: ApiAIAssistantRuntime
 ) => SdkTaskRuntime;
 
 type PackedRuntime = {
@@ -282,6 +279,13 @@ const makeTaskHarness = (request?: jest.MockedFunction<WebexRequest>) => {
   const contact: ContactFake = {
     wrapup: jest.fn(async (payload) => ({accepted: true, payload})),
   };
+  const api = new runtime.ApiAIAssistant(createFakeWebex(request));
+  api.setAIFeatureFlags({
+    generatedSummaries: {
+      wrapUpSummariesEnabled: true,
+      consultTransferSummariesEnabled: true,
+    },
+  });
   const task = new runtime.Task(
     contact,
     {
@@ -296,13 +300,9 @@ const makeTaskHarness = (request?: jest.MockedFunction<WebexRequest>) => {
     {},
     undefined,
     AGENT_ID,
-    AGENT_NAME
+    AGENT_NAME,
+    api
   );
-  const api = new runtime.ApiAIAssistant(createFakeWebex(request));
-  task.configureAISummary(api, () => ({
-    wrapUpSummariesEnabled: true,
-    consultTransferSummariesEnabled: true,
-  }));
   task.setFeatureEnablement({
     interactionId: MAIN_INTERACTION_ID,
     midCallEnabled: true,
@@ -496,10 +496,9 @@ describe('AI summary packed SDK contract', () => {
     expect(aiSummaryFixtures.postWrapUpSend.rejected.sendCalls).toHaveLength(1);
   });
 
-  it('emits feature enablement from the matching Task and removes task-owned listeners', () => {
+  it('applies feature enablement to the matching Task and removes task-owned listeners', () => {
     const {task} = makeTaskHarness();
-    const events: AISummaryFeatureEnablement[] = [];
-    const listener = (enablement: AISummaryFeatureEnablement) => events.push(enablement);
+    const listener = jest.fn();
 
     try {
       task.clearFeatureEnablement();
@@ -510,12 +509,11 @@ describe('AI summary packed SDK contract', () => {
         postCallEnabled: true,
         actionTimestamp: 1,
       });
-      expect(events).toEqual([]);
       expect(task.aiSummaryCapabilities).toEqual({midCallEnabled: false, postCallEnabled: false});
 
+      // The SDK's TaskManager emits TASK_FEATURE_ENABLEMENT on the task after this update.
       task.setFeatureEnablement(aiSummaryFixtures.featureEnablement.enabled);
 
-      expect(events).toEqual([aiSummaryFixtures.featureEnablement.enabled]);
       expect(task.aiSummaryCapabilities).toEqual({midCallEnabled: true, postCallEnabled: true});
       task.off(runtime.TASK_EVENTS.TASK_FEATURE_ENABLEMENT, listener);
       expect(task.listenerCount(runtime.TASK_EVENTS.TASK_FEATURE_ENABLEMENT)).toBe(0);
@@ -668,25 +666,18 @@ describe('AI summary packed SDK contract', () => {
     }
   );
 
-  it('settles a superseded same-conversation CONSULT request when TRANSFER replaces it', async () => {
+  it('resolves TRANSFER and clears the shared request when it replaces a same-conversation CONSULT request', async () => {
     jest.useFakeTimers();
     const {api, task} = makeTaskHarness();
     const sendEventMock: jest.MockedFunction<SendEvent> = jest.fn<ReturnType<SendEvent>, Parameters<SendEvent>>(
       async () => ({accepted: true})
     );
     api.sendEvent = sendEventMock;
-    let consultSettlement: 'pending' | 'fulfilled' | 'rejected' = 'pending';
 
     try {
-      const consult = task.requestMidCallSummary('CONSULT');
-      const observedConsult = consult.then(
-        () => {
-          consultSettlement = 'fulfilled';
-        },
-        () => {
-          consultSettlement = 'rejected';
-        }
-      );
+      // The SDK drops the replaced CONSULT request without settling it. The store applies only the latest
+      // result, so it never waits on the replaced one.
+      void task.requestMidCallSummary('CONSULT');
       await flushMicrotasks();
       expect(sendEventMock.mock.calls.at(-1)?.[3]).toBe('GET_MID_CALL_CONSULT_SUMMARY');
       expect(api.pendingRtdRequests.size).toBe(1);
@@ -714,11 +705,6 @@ describe('AI summary packed SDK contract', () => {
       );
       expect(api.pendingRtdRequests.size).toBe(0);
       expect(jest.getTimerCount()).toBe(0);
-      // Superseding the request must settle the old caller, not abandon its
-      // Promise when the SDK clears the previous timeout/map entry.
-      await flushMicrotasks();
-      expect(consultSettlement).toBe('rejected');
-      await observedConsult;
     } finally {
       stopTask(task);
       api.clearAllRtdRequests();

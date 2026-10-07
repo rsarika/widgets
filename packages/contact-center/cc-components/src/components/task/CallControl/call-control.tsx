@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 
-import {CallControlAISummaryProps, CallControlComponentProps, CallControlMenuType} from '../task.types';
+import {CallControlComponentProps, CallControlMenuType} from '../task.types';
 import './call-control.styles.scss';
 import {PopoverNext, TooltipNext, Text, ButtonCircle} from '@momentum-ui/react-collaboration';
 import type {PopoverInstance} from '@momentum-ui/react-collaboration';
@@ -21,7 +21,6 @@ import {
   handleCloseButtonPress,
   handleWrapupReasonChange,
   handleAudioRef,
-  runMidCallActionBeforeTelephony,
   getMediaType,
   isTelephonyMediaType,
   buildCallControlButtons,
@@ -32,17 +31,13 @@ import {
 } from './call-control.utils';
 import {withMetrics} from '@webex/cc-ui-logging';
 
-type MidCallSummary = NonNullable<CallControlAISummaryProps['consult']>;
-
 function CallControlComponent(props: CallControlComponentProps) {
   const [selectedWrapupReason, setSelectedWrapupReason] = useState<string | null>(null);
   const [selectedWrapupId, setSelectedWrapupId] = useState<string | null>(null);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [agentMenuType, setAgentMenuType] = useState<CallControlMenuType | null>(null);
   const [isMuteButtonDisabled, setIsMuteButtonDisabled] = useState(false);
-  const [isMidCallActionPending, setIsMidCallActionPending] = useState(false);
   const [isWrapupCompletionPending, setIsWrapupCompletionPending] = useState(false);
-  const midCallActionPendingRef = useRef(false);
   const wrapupCompletionPromiseRef = useRef<Promise<unknown> | null>(null);
   const agentPopovers = useRef<Record<string, PopoverInstance | undefined>>({});
   const wrapUpSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -105,9 +100,7 @@ function CallControlComponent(props: CallControlComponentProps) {
   useEffect(() => {
     setShowAgentMenu(false);
     setAgentMenuType(null);
-    midCallActionPendingRef.current = false;
     wrapupCompletionPromiseRef.current = null;
-    setIsMidCallActionPending(false);
     setIsWrapupCompletionPending(false);
   }, [currentTask?.data?.interactionId]);
 
@@ -160,48 +153,23 @@ function CallControlComponent(props: CallControlComponentProps) {
     handleWrapupChangeUtil(text, value, setSelectedWrapupReason, setSelectedWrapupId, logger);
   };
 
-  const setMidCallActionPending = (pending: boolean) => {
-    midCallActionPendingRef.current = pending;
-    setIsMidCallActionPending(pending);
-  };
-
-  const runAfterMidCallSummary = (
-    summary: MidCallSummary | undefined,
-    method: string,
-    runTelephonyAction: () => void | Promise<void>
-  ) => {
-    void runMidCallActionBeforeTelephony({
-      summary,
-      sendMidCallSummaryBeforeAction: aiSummary?.sendMidCallSummaryBeforeAction,
-      isPending: () => midCallActionPendingRef.current,
-      setPending: setMidCallActionPending,
-      runTelephonyAction,
-      logger,
-      method,
-    });
-  };
-
   const handleTargetSelect = (
     id: string,
     name: string,
     type: DestinationType,
     allowParticipantsToInteract: boolean
   ) => {
-    const summary = agentMenuType === 'Consult' ? aiSummary?.consult : aiSummary?.transfer;
-
-    runAfterMidCallSummary(summary, 'handleTargetSelect', () =>
-      handleTargetSelectUtil(
-        id,
-        name,
-        type,
-        allowParticipantsToInteract,
-        agentMenuType,
-        consultCall,
-        transferCall,
-        setConsultAgentName,
-        setLastTargetType,
-        logger
-      )
+    handleTargetSelectUtil(
+      id,
+      name,
+      type,
+      allowParticipantsToInteract,
+      agentMenuType,
+      consultCall,
+      transferCall,
+      setConsultAgentName,
+      setLastTargetType,
+      logger
     );
   };
 
@@ -265,106 +233,6 @@ function CallControlComponent(props: CallControlComponentProps) {
             {filteredButtons.map((button, index) => {
               if (!button.isVisible) return null;
 
-              const existingPartySummary =
-                button.id === 'transferConsult'
-                  ? aiSummary?.transfer
-                  : button.id === 'conference'
-                    ? aiSummary?.consult
-                    : undefined;
-              const shouldRenderExistingPartyPopover =
-                isTelephony &&
-                (button.id === 'transferConsult' || button.id === 'conference') &&
-                existingPartySummary !== undefined;
-
-              if (shouldRenderExistingPartyPopover) {
-                const popoverKey = `${button.id}:${currentInteractionId}`;
-                const confirmLabel = button.id === 'conference' ? 'Merge' : button.tooltip;
-                const requestSummaryOnOpen =
-                  button.id === 'transferConsult' || existingPartySummary.state === 'omitted';
-
-                return (
-                  <PopoverNext
-                    key={popoverKey}
-                    onHide={() => {
-                      setShowAgentMenu(false);
-                      setAgentMenuType(null);
-                    }}
-                    color="primary"
-                    delay={[0, 0]}
-                    placement="bottom"
-                    showArrow
-                    variant="medium"
-                    interactive
-                    offsetDistance={2}
-                    className="agent-popover"
-                    trigger="click"
-                    setInstance={(instance) => {
-                      agentPopovers.current[popoverKey] =
-                        typeof instance === 'function' ? instance(agentPopovers.current[popoverKey]) : instance;
-                    }}
-                    closeButtonPlacement="none"
-                    triggerComponent={
-                      <TooltipNext
-                        key={index}
-                        triggerComponent={
-                          <ButtonCircle
-                            className={button.className}
-                            aria-label={button.tooltip}
-                            disabled={button.disabled}
-                            data-testid={button.dataTestId}
-                          >
-                            <Icon className={button.className + '-icon'} name={button.icon} />
-                          </ButtonCircle>
-                        }
-                        color="primary"
-                        delay={[0, 0]}
-                        placement="bottom-start"
-                        type="description"
-                        variant="small"
-                        className="tooltip"
-                      >
-                        <p>{button.tooltip}</p>
-                      </TooltipNext>
-                    }
-                  >
-                    <ConsultTransferPopoverComponent
-                      key={popoverKey}
-                      onClose={() => agentPopovers.current[popoverKey]?.hide()}
-                      isTelephony={isTelephony}
-                      destinationLayout="existing-party-action"
-                      heading={button.tooltip}
-                      buttonIcon={button.icon}
-                      buddyAgents={[]}
-                      loadingBuddyAgents={false}
-                      onAgentSelect={() => undefined}
-                      onQueueSelect={() => undefined}
-                      onEntryPointSelect={() => undefined}
-                      onDialNumberSelect={() => undefined}
-                      action={button.id === 'transferConsult' ? 'Transfer' : 'Consult'}
-                      summaryActionType={button.id === 'transferConsult' ? 'TRANSFER' : 'CONSULT'}
-                      requestSummaryOnOpen={requestSummaryOnOpen}
-                      availableDestinations={[]}
-                      consultTransferOptions={consultTransferOptions}
-                      summary={existingPartySummary}
-                      requestMidCallSummary={aiSummary?.requestMidCallSummary}
-                      isActionPending={isMidCallActionPending}
-                      existingPartyConfirmLabel={confirmLabel}
-                      onExistingPartyConfirm={() =>
-                        runAfterMidCallSummary(existingPartySummary, 'handleExistingPartyConfirm', async () => {
-                          if (button.id === 'transferConsult') {
-                            await consultTransfer();
-                          } else {
-                            await consultConference();
-                          }
-                          agentPopovers.current[popoverKey]?.hide();
-                        })
-                      }
-                      logger={logger}
-                    />
-                  </PopoverNext>
-                );
-              }
-
               if (button.menuType) {
                 const action = button.menuType === 'Transfer' ? 'Transfer' : 'Consult';
                 const availableDestinations =
@@ -386,6 +254,9 @@ function CallControlComponent(props: CallControlComponentProps) {
                       setAgentMenuType(button.menuType as CallControlMenuType);
                       if (button.menuType !== 'Keypad' && availableDestinations.includes('agent')) {
                         loadBuddyAgents(action);
+                      }
+                      if (button.menuType !== 'Keypad' && isTelephony) {
+                        void aiSummary?.requestMidCallSummary?.(action === 'Transfer' ? 'TRANSFER' : 'CONSULT');
                       }
                     }}
                     onHide={() => {
@@ -476,8 +347,6 @@ function CallControlComponent(props: CallControlComponentProps) {
                         availableDestinations={availableDestinations}
                         consultTransferOptions={consultTransferOptions}
                         summary={action === 'Transfer' ? aiSummary?.transfer : aiSummary?.consult}
-                        requestMidCallSummary={aiSummary?.requestMidCallSummary}
-                        isActionPending={isMidCallActionPending}
                         isConferenceInProgress={controls?.main?.exitConference?.isVisible ?? false}
                         logger={logger}
                       />
@@ -515,6 +384,7 @@ function CallControlComponent(props: CallControlComponentProps) {
         {controls?.main?.wrapup?.isVisible && (
           <div className="wrapup-group">
             <PopoverNext
+              onShow={() => aiSummary?.requestPostCallSummary?.()}
               color="primary"
               delay={[0, 0]}
               placement="bottom-start"
@@ -561,12 +431,8 @@ function CallControlComponent(props: CallControlComponentProps) {
                     summary={aiSummary.postCall}
                     initialReasonId={selectedWrapupId ?? undefined}
                     completionPending={isWrapupCompletionPending}
-                    completionEscape={aiSummary.postCall.completionEscape}
                     onReasonChange={(reason) => handleWrapupChange(reason.name, reason.id)}
-                    onReasonCommit={(reason, revision) => {
-                      handleWrapupChange(reason.name, reason.id);
-                      aiSummary.onPostCallReasonCommit?.(reason.id, revision);
-                    }}
+                    onReasonCommit={(reason) => handleWrapupChange(reason.name, reason.id)}
                     onComplete={(reason) => {
                       handleWrapupChange(reason.name, reason.id);
                       return runWrapupCompletion(reason.name, reason.id);

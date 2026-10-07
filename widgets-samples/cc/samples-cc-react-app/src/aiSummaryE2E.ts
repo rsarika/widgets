@@ -44,19 +44,21 @@ export type AISummaryE2EBridge = {
   setOwner?: (agentId: string) => Promise<void>;
   registerAgent?: () => Promise<void>;
   requestMidCallSummary?: () => Promise<unknown>;
-  requestPostCallSummary?: (selectionRevision: number) => Promise<unknown>;
+  requestPostCallSummary?: () => Promise<unknown>;
 };
 
 export type AISummaryStoreObservation = {
   agentId: string;
   states: {
-    kind: string;
+    interactionId: string;
     role: string;
-    ownerKey: {interactionId: string; agentId: string; ownershipGeneration: number};
-    counters: {viewed: number; edited: number; copied: number};
+    status: string;
+    copied: number;
+    edited: boolean;
     contentRevision: number;
-    feedbackStatus?: string;
+    feedback: string;
   }[];
+  /** Interactions with a summary request still loading. */
   pendingRequests: number;
 };
 

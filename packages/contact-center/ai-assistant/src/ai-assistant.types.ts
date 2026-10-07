@@ -45,7 +45,6 @@ export type AIAssistantReceiverSummary =
       selectedFeedback: AISummaryFeedback;
       midCallFeedbackPending: boolean;
       controlsDisabled: boolean;
-      openReceiverSummary: () => boolean;
       recordReceiverSummaryCopied: (expectedRevision: number) => boolean;
       setReceiverSummaryFeedback: (
         feedback: Exclude<AISummaryFeedback, 'none'>,
@@ -64,7 +63,6 @@ export type AIAssistantReceiverSummary =
       controlsDisabled?: never;
       recordReceiverSummaryCopied?: never;
       setReceiverSummaryFeedback?: never;
-      openReceiverSummary: () => boolean;
     };
 
 export type UseAIAssistantChromeInput = Pick<

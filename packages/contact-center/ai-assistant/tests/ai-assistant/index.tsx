@@ -4,6 +4,7 @@ import {runInAction} from 'mobx';
 import {AIAssistant} from '../../src';
 import * as helper from '../../src/helper';
 import store from '@webex/cc-store';
+import type {AISummaryEntry} from '@webex/cc-store';
 import '@testing-library/jest-dom';
 
 jest.mock('@webex/cc-store', () => {
@@ -20,48 +21,30 @@ jest.mock('@webex/cc-store', () => {
     agentProfile: {},
     featureFlags: {isSuggestedResponsesEnabled: true},
     realTimeAssist: {},
-    receiverView: undefined,
+    aiSummaries: {},
     onErrorCallback: undefined,
     clearRealTimeAssist: jest.fn(),
-    recordAISummaryViewed: jest.fn(),
     recordAISummaryCopied: jest.fn(),
     setMidCallSummaryFeedback: jest.fn(),
-    getAISummaryViewModel: jest.fn(function () {
-      return this.receiverView;
-    }),
   };
 
   return {
     __esModule: true,
+    getAISummarySurface: jest.requireActual('../../../store/src/ai-summary').getAISummarySurface,
     default: observable.object(storeMock, {
       cc: observable.ref,
       currentTask: observable.ref,
       agentProfile: observable.ref,
       featureFlags: observable.ref,
       realTimeAssist: observable.ref,
-      receiverView: observable.ref,
+      aiSummaries: observable.ref,
       onErrorCallback: observable.ref,
-      getAISummaryViewModel: false,
       clearRealTimeAssist: false,
-      recordAISummaryViewed: false,
       recordAISummaryCopied: false,
       setMidCallSummaryFeedback: false,
     }),
   };
 });
-
-type ReceiverSummaryView = {
-  surface: 'omitted' | 'unavailable' | 'generic-error' | 'content';
-  eligible: boolean;
-  requestPending: boolean;
-  content?: {type: 'card'; adaptiveCard: unknown};
-  contentRevision?: number;
-  counters: {viewed: number; copied: number; edited: number; liked: number; disliked: number};
-  feedback: 'none' | 'like' | 'dislike';
-  midCallFeedbackPending: boolean;
-  actionType?: 'CONSULT' | 'TRANSFER';
-  ownerKey?: {interactionId: string; agentId: string; ownershipGeneration: number};
-};
 
 type StoreMock = {
   cc: {
@@ -75,28 +58,21 @@ type StoreMock = {
   agentProfile: Record<string, unknown>;
   featureFlags: {isSuggestedResponsesEnabled: boolean};
   realTimeAssist: Record<string, unknown>;
-  receiverView?: ReceiverSummaryView;
+  aiSummaries: Record<string, {receiver?: AISummaryEntry}>;
   onErrorCallback?: jest.Mock;
   clearRealTimeAssist: jest.Mock;
-  recordAISummaryViewed: jest.Mock;
   recordAISummaryCopied: jest.Mock;
   setMidCallSummaryFeedback: jest.Mock;
-  getAISummaryViewModel: jest.Mock;
 };
 const storeMock = store as unknown as StoreMock;
 
-const receiverSummaryView = (surface: ReceiverSummaryView['surface']): ReceiverSummaryView => ({
-  surface,
-  eligible: true,
-  requestPending: false,
-  counters: {viewed: 0, copied: 0, edited: 0, liked: 0, disliked: 0},
+const receiverEntry = (overrides: Partial<AISummaryEntry> = {}): AISummaryEntry => ({
+  status: 'ready',
+  revision: 7,
+  copied: 0,
+  edited: false,
   feedback: 'none',
-  midCallFeedbackPending: false,
-  ownerKey: {interactionId: 'interaction-1', agentId: 'agent-1', ownershipGeneration: 1},
-});
-
-const receiverContentView = (overrides: Partial<ReceiverSummaryView> = {}): ReceiverSummaryView => ({
-  ...receiverSummaryView('content'),
+  actionType: 'TRANSFER',
   content: {
     type: 'card',
     adaptiveCard: {
@@ -105,10 +81,17 @@ const receiverContentView = (overrides: Partial<ReceiverSummaryView> = {}): Rece
       body: [{type: 'TextBlock', text: 'Receiver summary'}],
     },
   },
-  contentRevision: 7,
-  actionType: 'TRANSFER',
   ...overrides,
 });
+
+const receiverErrorEntry = (error: AISummaryEntry['error']): AISummaryEntry =>
+  receiverEntry({status: 'error', error, content: undefined});
+
+const setReceiverEntry = (receiver?: AISummaryEntry): void => {
+  runInAction(() => {
+    storeMock.aiSummaries = receiver ? {'interaction-1': {receiver}} : {};
+  });
+};
 
 const deferred = <T,>(): {
   promise: Promise<T>;
@@ -134,9 +117,8 @@ describe('AIAssistant widget', () => {
     storeMock.agentProfile = {};
     storeMock.featureFlags = {isSuggestedResponsesEnabled: true};
     storeMock.realTimeAssist = {};
-    storeMock.receiverView = undefined;
+    storeMock.aiSummaries = {};
     storeMock.onErrorCallback = undefined;
-    storeMock.recordAISummaryViewed.mockReturnValue(true);
     storeMock.recordAISummaryCopied.mockReturnValue(true);
     storeMock.cc.apiAIAssistant.sendRealTimeAssistanceUserAction.mockResolvedValue(undefined);
     storeMock.setMidCallSummaryFeedback.mockResolvedValue({outcome: 'confirmed'});
@@ -195,63 +177,56 @@ describe('AIAssistant widget', () => {
     expect(container.querySelector('.my-host-class')).toBeInTheDocument();
   });
 
-  it('queries the store receiver view model with the current task and omits the trigger for omitted surfaces', () => {
-    storeMock.receiverView = receiverSummaryView('omitted');
-
+  it('should omit the View summary trigger until a receiver summary arrives for the current interaction', () => {
+    runInAction(() => {
+      storeMock.aiSummaries = {'other-interaction': {receiver: receiverEntry()}};
+    });
     render(<AIAssistant />);
-
-    expect(storeMock.getAISummaryViewModel).toHaveBeenCalledWith('mid-call', 'receiver', storeMock.currentTask);
     expect(screen.queryByTestId('ai-assistant:view-summary')).not.toBeInTheDocument();
   });
 
   it('re-renders the receiver summary branch when the observable surface changes', async () => {
-    storeMock.receiverView = receiverSummaryView('unavailable');
+    setReceiverEntry(receiverErrorEntry('unsupported'));
     render(<AIAssistant />);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
     expect(screen.getByTestId('ai-summary:unavailable')).toBeInTheDocument();
 
-    runInAction(() => {
-      storeMock.receiverView = receiverSummaryView('generic-error');
-    });
+    setReceiverEntry(receiverErrorEntry('failed'));
 
     await waitFor(() => expect(screen.getByTestId('ai-summary:error')).toBeInTheDocument());
     expect(screen.queryByTestId('ai-summary:unavailable')).not.toBeInTheDocument();
   });
 
-  it('records the receiver summary view before opening the current revision', async () => {
-    storeMock.receiverView = receiverContentView();
-    storeMock.recordAISummaryViewed.mockReturnValue(true);
+  it('should open the receiver summary from the View summary trigger', async () => {
+    setReceiverEntry(receiverEntry());
     render(<AIAssistant />);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
 
     expect(await screen.findByTestId('ai-assistant:receiver-summary')).toBeInTheDocument();
-    expect(storeMock.recordAISummaryViewed).toHaveBeenCalledWith('mid-call', 'receiver', 7, storeMock.currentTask);
-    expect(storeMock.recordAISummaryViewed).toHaveBeenCalledTimes(1);
   });
 
   it('opens a receiver summary even when Real-time Assist is disabled', async () => {
     storeMock.featureFlags = {isSuggestedResponsesEnabled: false};
-    storeMock.receiverView = receiverContentView();
+    setReceiverEntry(receiverEntry());
     render(<AIAssistant />);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
 
     expect(await screen.findByTestId('ai-assistant:receiver-summary')).toBeInTheDocument();
     expect(screen.queryByTestId('ai-assistant:landing')).not.toBeInTheDocument();
-    expect(storeMock.recordAISummaryViewed).toHaveBeenCalledWith('mid-call', 'receiver', 7, storeMock.currentTask);
   });
 
   it('routes receiver copy and feedback through the store with the current revision and action type', async () => {
-    storeMock.receiverView = receiverContentView();
+    setReceiverEntry(receiverEntry());
     render(<AIAssistant />);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
     fireEvent.click(await screen.findByRole('button', {name: 'Copy Summary'}));
 
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
-    expect(storeMock.recordAISummaryCopied).toHaveBeenCalledWith('mid-call', 'receiver', 7, storeMock.currentTask);
+    expect(storeMock.recordAISummaryCopied).toHaveBeenCalledWith('receiver', 7, storeMock.currentTask);
 
     fireEvent.click(screen.getByRole('button', {name: 'This is helpful'}));
 
@@ -267,11 +242,7 @@ describe('AIAssistant widget', () => {
   });
 
   it('projects receiver feedback pending state as disabled controls without painting a selection', async () => {
-    storeMock.receiverView = receiverContentView({
-      requestPending: true,
-      midCallFeedbackPending: true,
-      feedback: 'none',
-    });
+    setReceiverEntry(receiverEntry({feedbackPending: true}));
     render(<AIAssistant />);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
@@ -283,15 +254,9 @@ describe('AIAssistant widget', () => {
 
   it('replaces receiver feedback projections only after the store confirms the selection', async () => {
     const feedbackSend = deferred<{outcome: 'confirmed'}>();
-    storeMock.receiverView = receiverContentView();
+    setReceiverEntry(receiverEntry());
     storeMock.setMidCallSummaryFeedback.mockImplementationOnce(() => {
-      runInAction(() => {
-        storeMock.receiverView = receiverContentView({
-          requestPending: true,
-          midCallFeedbackPending: true,
-          feedback: 'none',
-        });
-      });
+      setReceiverEntry(receiverEntry({feedbackPending: true}));
       return feedbackSend.promise;
     });
     render(<AIAssistant />);
@@ -304,9 +269,7 @@ describe('AIAssistant widget', () => {
     expect(like).toHaveAttribute('aria-pressed', 'false');
 
     feedbackSend.resolve({outcome: 'confirmed'});
-    runInAction(() => {
-      storeMock.receiverView = receiverContentView({feedback: 'like'});
-    });
+    setReceiverEntry(receiverEntry({feedback: 'like'}));
 
     await waitFor(() =>
       expect(screen.getByRole('button', {name: 'This is helpful'})).toHaveAttribute('aria-pressed', 'true')

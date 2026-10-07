@@ -25,7 +25,7 @@ import {
   getDefaultUIControls,
   TaskResponse,
 } from '@webex/contact-center';
-import type {AISummaryAction as SDKAISummaryAction} from '@webex/contact-center';
+import type {AISummaryAction as SDKAISummaryAction, AISummaryResponse} from '@webex/contact-center';
 import type {RealTimeAssistanceParams} from 'node_modules/@webex/contact-center/dist/types/types';
 import {
   OutdialAniEntriesResponse,
@@ -223,12 +223,7 @@ interface IStore {
   isEmergencyModalAlreadyDisplayed: boolean;
   realTimeAssist: Record<string, RealTimeAssistPayload[]>;
   offerActionErrors: Record<string, OfferActionErrorDisplay>;
-  aiSummaryCapabilities: Record<string, AISummaryCapabilityRecord>;
-  aiSummaryCurrentOwners: Record<string, AISummaryCurrentOwnerSlots>;
-  aiSummaryOwnerStates: Record<string, AISummaryOwnerState>;
-  aiSummaryPendingRequests: Record<number, AISummaryPendingRequest>;
-  aiSummaryLastResults: Record<string, AISummaryLastResult>;
-  pendingAISummaryStatusTransitions: readonly AISummaryStatusTransition[];
+  aiSummaries: Record<string, AISummaryEntries>;
   init(params: InitParams, callback: (ccSDK: IContactCenter) => void): Promise<void>;
   registerCC(webex?: WithWebex['webex']): Promise<void>;
 }
@@ -276,39 +271,10 @@ interface IStoreWrapper extends IStore {
   setOfferActionError(interactionId: string, error: OfferActionErrorDisplay | null): void;
   clearOfferActionError(interactionId: string): void;
   pruneOfferActionErrors(activeInteractionIds: Set<string>): void;
-  handleAISummaryFeatureEnablement(payload: unknown, task?: ITask): void;
-  getAISummaryViewModel(kind: AISummaryKind, role: AISummaryOwnershipRole, task?: ITask): AISummaryViewModel;
-  requestMidCallSummary(
-    actionType: AISummaryActionType,
-    role?: AISummaryMidCallRole,
-    task?: ITask
-  ): Promise<AISummaryRequestResult>;
-  requestPostCallSummary(trigger: AISummaryPostCallRequestTrigger, task?: ITask): Promise<AISummaryRequestResult>;
-  getCurrentAISummaryOwnerKey(task?: ITask): AISummaryCurrentOwnerKey | undefined;
-  advanceAISummaryOwnership(
-    capturedOwnerKey: AISummaryCurrentOwnerKey | undefined,
-    boundary: AISummaryOwnershipAdvanceBoundary,
-    task?: ITask
-  ): AISummaryOwnershipAdvanceResult;
-  editAISummary(
-    kind: AISummaryKind,
-    role: AISummaryOwnershipRole,
-    field: AISummaryEditableField,
-    expectedRevision: number,
-    task?: ITask
-  ): boolean;
-  recordAISummaryViewed(
-    kind: AISummaryKind,
-    role: AISummaryOwnershipRole,
-    expectedRevision: number,
-    task?: ITask
-  ): boolean;
-  recordAISummaryCopied(
-    kind: AISummaryKind,
-    role: AISummaryOwnershipRole,
-    expectedRevision: number,
-    task?: ITask
-  ): boolean;
+  requestMidCallSummary(actionType: AISummaryActionType, task?: ITask): Promise<void>;
+  requestPostCallSummary(task?: ITask): Promise<void>;
+  editAISummary(role: AISummaryRole, field: AISummaryEditableField, expectedRevision: number, task?: ITask): boolean;
+  recordAISummaryCopied(role: AISummaryRole, expectedRevision: number, task?: ITask): boolean;
   setMidCallSummaryFeedback(
     role: AISummaryMidCallRole,
     feedback: Exclude<AISummaryFeedback, 'none'>,
@@ -316,23 +282,15 @@ interface IStoreWrapper extends IStore {
     expectedRevision: number,
     task?: ITask
   ): Promise<AISummaryFeedbackResult>;
-  sendMidCallSummaryBeforeAction(
-    role: AISummaryMidCallRole,
-    actionType: AISummaryActionType,
-    expectedRevision: number,
-    task?: ITask
-  ): Promise<AISummaryPreActionSendResult>;
   setPostCallSummaryFeedback(
     feedback: Exclude<AISummaryFeedback, 'none'>,
     expectedRevision: number,
     task?: ITask
   ): boolean;
-  markPostCallWrapupCompleted(wrapUpCode: string, task?: ITask): boolean;
-  capturePostCallDraft(wrapUpCode: string, task?: ITask): PostCallDraftCaptureToken | undefined;
-  releasePostCallDraft(token: PostCallDraftCaptureToken): boolean;
-  freezeAndSendPostCallSummary(token: PostCallDraftCaptureToken): Promise<PostCallSubmissionResult>;
-  getPendingAISummaryStatusTransitions(): readonly AISummaryStatusTransition[];
-  acknowledgeAISummaryStatusTransition(sequence: number): boolean;
+  sendMidCallSummaryResponse(actionType: AISummaryActionType, task?: ITask): Promise<void>;
+  getPostCallSummaryResponse(wrapUpCode: string, task?: ITask): AISummaryResponse | undefined;
+  sendPostCallSummaryResponse(response: AISummaryResponse, task?: ITask): Promise<'submitted' | 'response-failed'>;
+  onAISummaryStatusChange(listener: (detail: AISummaryStatusDetail) => void): () => void;
 }
 
 interface IWrapupCode {
@@ -595,96 +553,10 @@ export const CAMPAIGN_PREVIEW_OUTBOUND_TYPES = ['STANDARD_PREVIEW_CAMPAIGN', 'DI
 /** Campaign type values (from callProcessingDetails) that identify a campaign preview task. */
 export const CAMPAIGN_PREVIEW_CAMPAIGN_TYPES = ['preview_standard', 'preview_direct'];
 
-export type AISummaryKind = 'mid-call' | 'post-call';
 export type AISummaryActionType = SDKAISummaryAction;
-export type AISummaryOwnershipRole = 'initiator' | 'receiver' | 'post-call';
-export type AISummaryMidCallRole = Extract<AISummaryOwnershipRole, 'initiator' | 'receiver'>;
-export type AISummaryViewKey = `mid-call:${AISummaryMidCallRole}` | 'post-call:post-call';
-export type AISummaryViewSelector =
-  | {
-      kind: 'mid-call';
-      role: AISummaryMidCallRole;
-    }
-  | {
-      kind: 'post-call';
-      role: 'post-call';
-    };
-export type AISummaryCurrentOwnerSlots = Partial<Record<AISummaryViewKey, AISummaryOwnerKey>>;
-
-export type AISummaryOwnerKey = {
-  interactionId: string;
-  agentId: string;
-  ownershipGeneration: number;
-};
-
-export type AISummaryCurrentOwnerKey = {
-  captureId: string;
-  interactionId: string;
-  agentId: string;
-  ownerKeys: AISummaryCurrentOwnerSlots;
-};
-
-export type AISummaryOwnershipBoundaryType =
-  | 'direct-transfer'
-  | 'consult-transfer'
-  | 'transfer-conference'
-  | 'consult-conference'
-  | 'conference-established'
-  | 'topology-cycle';
-
-export type AISummaryOwnershipAdvanceMode = 'carry-forward' | 'reset';
-
-export type AISummaryOwnershipAdvanceBoundary = {
-  type: AISummaryOwnershipBoundaryType;
-  mode: AISummaryOwnershipAdvanceMode;
-  successorAgentId?: string;
-  observationId?: string;
-};
-
-export type AISummaryOwnershipAdvanceResult =
-  | {outcome: 'advanced'}
-  | {outcome: 'duplicate'}
-  | {outcome: 'stale'}
-  | {outcome: 'blocked'};
-
-export type AISummaryPendingRequest = {
-  sequence: number;
-  ownerStateKey: string;
-  ownerKey: AISummaryOwnerKey;
-  kind: AISummaryKind;
-  role: AISummaryOwnershipRole;
-  actionType?: AISummaryActionType;
-  postCallGeneration?: number;
-  deadlineAt: number;
-  settlementClosed: boolean;
-};
-
-export type AISummaryNormalizedTimestamp =
-  | {
-      present: true;
-      value: number;
-    }
-  | {
-      present: false;
-    };
-
-export type AISummaryCapabilityRecord = {
-  interactionId: string;
-  midCallEnabled: boolean;
-  postCallEnabled: boolean;
-  timestamp: AISummaryNormalizedTimestamp;
-  arrivalOrder: number;
-};
-
-export type AISummaryOwnershipBoundary =
-  | {
-      kind: 'valid';
-      interactionId: string;
-    }
-  | {
-      kind: 'invalid';
-      reason: 'missing-stable-identity' | 'conflicting-stable-identity';
-    };
+/** The consult/transfer initiator's summary, the receiving agent's summary, or the wrap-up summary. */
+export type AISummaryRole = 'initiator' | 'receiver' | 'post-call';
+export type AISummaryMidCallRole = Exclude<AISummaryRole, 'post-call'>;
 
 export type AISummarySectionKey =
   | 'initialContactReason'
@@ -738,30 +610,11 @@ export type AISummaryContent =
     };
 
 export type AISummaryFeedback = 'none' | 'like' | 'dislike';
-export type AISummaryFeedbackStatus = 'pending' | 'not-confirmed';
-
-export type AISummaryCounters = {
-  viewed: number;
-  copied: number;
-  edited: number;
-  liked: number;
-  disliked: number;
-};
+/** Post-call feedback is only submitted with the final response after wrap-up. */
+export type AISummaryFeedbackStatus = 'pending';
 
 export type AISummaryFeedbackResult =
   | {outcome: 'confirmed'}
-  | {outcome: 'failed'}
-  | {outcome: 'blocked'}
-  | {outcome: 'stale'};
-
-export type AISummaryRequestResult =
-  | {outcome: 'accepted'}
-  | {outcome: 'failed'}
-  | {outcome: 'blocked'}
-  | {outcome: 'stale'};
-
-export type AISummaryPreActionSendResult =
-  | {outcome: 'sent'}
   | {outcome: 'failed'}
   | {outcome: 'blocked'}
   | {outcome: 'stale'};
@@ -770,125 +623,30 @@ export type PostCallSubmissionResult =
   | {wrapup: 'failed'}
   | {wrapup: 'succeeded'; response: 'not-required' | 'submitted' | 'response-failed'};
 
-export type AISummaryStoreActionResult =
-  | AISummaryRequestResult
-  | AISummaryPreActionSendResult
-  | AISummaryFeedbackResult
-  | PostCallSubmissionResult;
-
-export type AISummaryPostCallRequestTrigger =
-  | {type: 'reason-commit'; reasonId: string; selectionRevision: number}
-  | {type: 'retry'};
-
 export type AISummarySurface = 'omitted' | 'generating' | 'unavailable' | 'generic-error' | 'content';
 
-export type AISummaryErrorCategory =
-  | 'unauthorized'
-  | 'initialization'
-  | 'offline'
-  | 'unavailable'
-  | 'empty'
-  | 'disabled'
-  | 'timeout'
-  | 'generic';
-
-export type AISummaryLastResult =
-  | {
-      kind: 'success';
-      interactionId: string;
-      role: AISummaryOwnershipRole;
-      content: AISummaryContent;
-      timestamp: AISummaryNormalizedTimestamp;
-      arrivalOrder: number;
-    }
-  | {
-      kind: 'unsupported';
-      interactionId: string;
-      role: AISummaryOwnershipRole;
-      timestamp: AISummaryNormalizedTimestamp;
-      arrivalOrder: number;
-    }
-  | {
-      kind: 'error';
-      category: AISummaryErrorCategory;
-      role: AISummaryOwnershipRole;
-      interactionId?: string;
-    }
-  | {
-      kind: 'discarded-interaction-mismatch';
-      interactionId?: string;
-      expectedInteractionId: string;
-    };
-
-export type AISummaryViewModel = {
-  key: AISummaryViewKey;
-  eligible: boolean;
-  surface: AISummarySurface;
-  requestPending: boolean;
-  completionEscape?: boolean;
+/** One summary of an interaction, stored at `aiSummaries[interactionId][role]`. */
+export type AISummaryEntry = {
+  /** Lifecycle of the latest request, or of the pushed receiver summary. */
+  status: 'loading' | 'ready' | 'error';
+  /** Latest accepted content; kept while a newer request loads or after it fails. */
   content?: AISummaryContent;
-  contentRevision?: number;
-  counters: AISummaryCounters;
+  /** Why the latest request failed; `unsupported` when the payload had nothing this role can render. */
+  error?: 'failed' | 'unsupported';
+  /** Bumped when a new summary arrives, so edits, copies and feedback apply to the summary that was shown. */
+  revision: number;
+  copied: number;
+  edited: boolean;
   feedback: AISummaryFeedback;
-  midCallFeedbackPending?: boolean;
-  feedbackStatus?: AISummaryFeedbackStatus;
-  controlsDisabled?: boolean;
+  /** A mid-call feedback response is being sent. */
+  feedbackPending?: boolean;
+  /** The consult or transfer a mid-call summary was generated for. */
   actionType?: AISummaryActionType;
-  ownerKey?: AISummaryOwnerKey;
 };
 
-export type AISummaryOwnerStateBase = {
-  ownerKey: AISummaryOwnerKey;
-  content?: AISummaryContent;
-  contentRevision: number;
-  counters: AISummaryCounters;
-  feedback: AISummaryFeedback;
-  viewedRevision?: number;
-};
+export type AISummaryEntries = Partial<Record<AISummaryRole, AISummaryEntry>>;
 
-export type AISummaryMidCallOwnerState = AISummaryOwnerStateBase & {
-  kind: 'mid-call';
-  role: AISummaryMidCallRole;
-  actionType: AISummaryActionType;
-  midCallFeedbackPending: boolean;
-  postCallGeneration?: never;
-  postCallTerminalGeneration?: never;
-  postCallTerminalWrapUpCode?: never;
-  postCallFeedbackPending?: never;
-  feedbackStatus?: never;
-  postCallCaptureRevision?: never;
-  agentWrappedUpObserved?: never;
-};
-
-export type AISummaryPostCallOwnerState = AISummaryOwnerStateBase & {
-  kind: 'post-call';
-  role: 'post-call';
-  actionType?: never;
-  midCallFeedbackPending?: never;
-  postCallGeneration?: number;
-  postCallCompletionEscapeGeneration?: number;
-  postCallTerminalGeneration?: number;
-  postCallTerminalWrapUpCode?: string;
-  postCallFeedbackPending: boolean;
-  feedbackStatus?: AISummaryFeedbackStatus;
-  postCallCaptureRevision?: number;
-  agentWrappedUpObserved: boolean;
-};
-
-export type AISummaryOwnerState = AISummaryMidCallOwnerState | AISummaryPostCallOwnerState;
-
-export type PostCallDraftCaptureToken = symbol & {
-  readonly __postCallDraftCaptureToken: unique symbol;
-};
-
-export type AISummaryStatusTransition =
-  | {
-      sequence: number;
-      kind: 'mid-call';
-      state: 'available' | 'unavailable';
-    }
-  | {
-      sequence: number;
-      kind: 'post-call';
-      state: 'available' | 'unavailable' | 'submitted' | 'response-failed';
-    };
+/** Content-free summary status reported to the host through `onAISummaryStatusChange`. */
+export type AISummaryStatusDetail =
+  | {kind: 'mid-call'; state: 'available' | 'unavailable'}
+  | {kind: 'post-call'; state: 'available' | 'unavailable' | 'submitted' | 'response-failed'};

@@ -112,7 +112,6 @@ const createReceiverSummary = (overrides: Partial<ReceiverSummaryContent> = {}):
   selectedFeedback: 'none',
   midCallFeedbackPending: false,
   controlsDisabled: false,
-  openReceiverSummary: jest.fn().mockReturnValue(true),
   recordReceiverSummaryCopied: jest.fn().mockReturnValue(true),
   setReceiverSummaryFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
   ...overrides,
@@ -517,26 +516,20 @@ describe('AIAssistantComponent', () => {
     await waitFor(() => expect(like).toHaveAttribute('aria-pressed', 'true'));
   });
 
-  it('gates the receiver branch on accepted view recording and disables pending feedback controls', async () => {
-    const openReceiverSummary = jest.fn().mockReturnValueOnce(false).mockReturnValue(true);
+  it('opens the receiver branch from View summary and disables pending feedback controls', async () => {
     const receiverSummary = createReceiverSummary({
       midCallFeedbackPending: true,
       controlsDisabled: true,
-      openReceiverSummary,
     });
-    const controls = renderStatefulReceiver('closed', receiverSummary);
+    renderStatefulReceiver('closed', receiverSummary);
 
     const viewSummary = screen.getByTestId('ai-assistant:view-summary');
     expect(viewSummary).toHaveAttribute('aria-label', AI_SUMMARY_MESSAGES.viewSummary);
     expect(viewSummary).toHaveAttribute('title', AI_SUMMARY_MESSAGES.viewSummary);
     fireEvent.click(viewSummary);
-    expect(screen.queryByTestId('ai-assistant:receiver-summary')).not.toBeInTheDocument();
-    expect(controls.open).not.toHaveBeenCalled();
 
-    fireEvent.click(viewSummary);
     expect(await screen.findByTestId('ai-assistant:receiver-summary')).toBeInTheDocument();
     expect(await screen.findByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toBeDisabled();
-    expect(openReceiverSummary).toHaveBeenCalledTimes(2);
   });
 
   it('opens the receiver branch when Real-time Assist is disabled', async () => {
