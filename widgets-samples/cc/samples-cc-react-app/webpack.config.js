@@ -112,16 +112,7 @@ module.exports = {
         },
       },
       {
-        test: /\.svg$/,
-        resourceQuery: /svgr/,
-        // Momentum React imports the named ReactComponent export. file-loader
-        // supplies the URL default export, so SVGR 5 emits that named component.
-        type: 'javascript/auto',
-        use: ['@svgr/webpack', 'file-loader'],
-      },
-      {
         test: /\.(png|jpg|gif|svg)$/,
-        resourceQuery: {not: [/svgr/]},
         include: [
           resolveMonorepoRoot('node_modules/@momentum-ui'),
           resolveMonorepoRoot('node_modules/@momentum-design'),

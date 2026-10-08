@@ -1,11 +1,4 @@
-import type {
-  AISummaryActionType,
-  AISummaryContent,
-  AISummaryFeedback,
-  AISummaryFeedbackResult,
-  ILogger,
-  RealTimeAssistPayload,
-} from '@webex/cc-store';
+import type {AISummaryEntry, AISummaryFeedback, ILogger, RealTimeAssistPayload} from '@webex/cc-store';
 
 /** Visual state of the AI Assistant panel chrome. */
 export type AIAssistantChromeState = 'closed' | 'open' | 'minimized';
@@ -31,30 +24,16 @@ export type AIAssistantReceiverSummary =
   | {
       surface: 'content';
       branchKey: string;
-      content: Extract<AISummaryContent, {type: 'card'}>;
+      content: NonNullable<AISummaryEntry['content']>;
       contentRevision: number;
-      actionType: AISummaryActionType;
       selectedFeedback: AISummaryFeedback;
-      midCallFeedbackPending: boolean;
-      controlsDisabled: boolean;
+      feedbackPending: boolean;
       recordReceiverSummaryCopied: (expectedRevision: number) => boolean;
-      setReceiverSummaryFeedback: (
-        feedback: Exclude<AISummaryFeedback, 'none'>,
-        actionType: AISummaryActionType,
-        expectedRevision: number
-      ) => Promise<AISummaryFeedbackResult>;
+      setReceiverSummaryFeedback: (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) => void;
     }
   | {
       surface: 'unavailable' | 'generic-error';
       branchKey: string;
-      content?: never;
-      contentRevision?: never;
-      actionType?: never;
-      selectedFeedback?: never;
-      midCallFeedbackPending?: never;
-      controlsDisabled?: never;
-      recordReceiverSummaryCopied?: never;
-      setReceiverSummaryFeedback?: never;
     };
 
 /** Props for the top-level AIAssistant presentational component. */
@@ -134,6 +113,8 @@ export interface AIAssistantActionEvent {
 
 export interface AdaptiveCardRendererProps {
   card: unknown;
+  /** Receiver summary revision; resets a failed card when a replacement summary arrives. */
+  contentRevision?: number;
   /** Title already rendered by RealTimeAssist; removes the matching header embedded in backend cards. */
   assistantTitle?: string;
   /** Plain-text fallback rendered when the Adaptive Card cannot be parsed/rendered. */

@@ -16,7 +16,6 @@ import {
   RealTimeTranscriptionData,
   RealTimeAssistPayload,
   OfferActionErrorDisplay,
-  AISummaryEntries,
 } from './store.types';
 
 import {getFeatureFlags} from './util';
@@ -68,7 +67,7 @@ class Store implements IStore {
   isEmergencyModalAlreadyDisplayed: boolean = false;
   realTimeAssist: Record<string, RealTimeAssistPayload[]> = {};
   offerActionErrors: Record<string, OfferActionErrorDisplay> = {};
-  aiSummaries: Record<string, AISummaryEntries> = {};
+  aiSummaries: IStore['aiSummaries'] = {};
 
   constructor() {
     makeAutoObservable(this, {

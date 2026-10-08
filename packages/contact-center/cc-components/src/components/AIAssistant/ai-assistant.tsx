@@ -11,7 +11,6 @@ import AdaptiveCardRenderer from './AdaptiveCardRenderer/adaptive-card-renderer'
 import {AI_ASSISTANT_TITLE, DISCLAIMER_TEXT} from './constants';
 import './ai-assistant.styles.scss';
 
-type AIAssistantActiveBranch = 'real-time-assist' | 'receiver-summary';
 type ReceiverCardRenderState = 'pending' | 'ready' | 'fallback';
 
 const FOCUSABLE_SELECTOR = 'button, [href], input, textarea, select, [tabindex], [role="button"], mdc-button';
@@ -144,8 +143,8 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   logger,
   className,
 }) => {
-  const [activeBranch, setActiveBranch] = useState<AIAssistantActiveBranch>('real-time-assist');
-  const [activeReceiverBranchKey, setActiveReceiverBranchKey] = useState<string | null>(null);
+  // The receiver summary branch the agent opened; real-time assist shows otherwise.
+  const [viewingReceiverKey, setViewingReceiverKey] = useState<string | null>(null);
   const [receiverCardRenderState, setReceiverCardRenderState] = useState<ReceiverCardRenderState>('pending');
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -162,10 +161,7 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
     .join(' ');
   const canViewReceiverSummary = Boolean(receiverSummary && hasActiveInteraction);
   const showReceiverSummary = Boolean(
-    receiverSummary &&
-      hasActiveInteraction &&
-      activeBranch === 'receiver-summary' &&
-      activeReceiverBranchKey === receiverSummary.branchKey
+    receiverSummary && hasActiveInteraction && viewingReceiverKey === receiverSummary.branchKey
   );
   const showLanding = !showReceiverSummary && (!hasActiveInteraction || !isFeatureEnabled);
   const receiverBranchKey = receiverSummary?.branchKey;
@@ -181,12 +177,11 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   );
 
   useEffect(() => {
-    if (!receiverBranchKey || activeReceiverBranchKey !== receiverBranchKey) {
-      setActiveBranch('real-time-assist');
-      setActiveReceiverBranchKey(null);
+    if (viewingReceiverKey !== receiverBranchKey) {
+      setViewingReceiverKey(null);
       pendingReceiverActivationFocusRef.current = false;
     }
-  }, [activeReceiverBranchKey, receiverBranchKey]);
+  }, [viewingReceiverKey, receiverBranchKey]);
 
   const focusTarget = (target: HTMLElement | null | undefined): boolean => {
     if (!target || !isConnectedFocusTarget(target)) {
@@ -319,20 +314,17 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   };
 
   const openRealTimeAssist = () => {
-    setActiveBranch('real-time-assist');
-    setActiveReceiverBranchKey(null);
+    setViewingReceiverKey(null);
     open();
   };
 
   const restoreRealTimeAssist = () => {
-    setActiveBranch('real-time-assist');
-    setActiveReceiverBranchKey(null);
+    setViewingReceiverKey(null);
     restore();
   };
 
   const closePanel = () => {
-    setActiveBranch('real-time-assist');
-    setActiveReceiverBranchKey(null);
+    setViewingReceiverKey(null);
     close();
   };
 
@@ -340,8 +332,7 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
     if (!receiverSummary) {
       return;
     }
-    setActiveBranch('receiver-summary');
-    setActiveReceiverBranchKey(receiverSummary.branchKey);
+    setViewingReceiverKey(receiverSummary.branchKey);
     pendingReceiverActivationFocusRef.current = true;
     if (chrome === 'minimized') {
       restore();
@@ -368,6 +359,7 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
           <div dir="auto">
             <AdaptiveCardRenderer
               card={receiverDisplayCard}
+              contentRevision={receiverSummary.contentRevision}
               fallbackText={AI_SUMMARY_MESSAGES.unavailable}
               logger={logger}
             />
@@ -378,11 +370,9 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
             mode="mid-call-receiver"
             containingPanelFocusTarget={panelRef}
             state="content"
-            requestPending={receiverSummary.midCallFeedbackPending}
-            controlsDisabled={receiverSummary.controlsDisabled}
+            requestPending={receiverSummary.feedbackPending}
             selectedFeedback={receiverSummary.selectedFeedback}
             contentRevision={receiverSummary.contentRevision}
-            actionType={receiverSummary.actionType}
             getReceiverCopyText={() => {
               const renderedText = receiverBranchRef.current ? extractCardText(receiverBranchRef.current).trim() : '';
               const text = renderedText || extractReceiverDisplayCardText(receiverDisplayCard).trim();

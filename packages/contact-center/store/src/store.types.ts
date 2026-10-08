@@ -25,7 +25,13 @@ import {
   getDefaultUIControls,
   TaskResponse,
 } from '@webex/contact-center';
-import type {AISummaryAction as SDKAISummaryAction, AISummaryResponse} from '@webex/contact-center';
+import type {
+  AISummary,
+  AISummaryAction,
+  AISummaryFeedback,
+  AISummaryResponse,
+  AISummarySections,
+} from '@webex/contact-center';
 import type {RealTimeAssistanceParams} from 'node_modules/@webex/contact-center/dist/types/types';
 import {
   OutdialAniEntriesResponse,
@@ -223,7 +229,7 @@ interface IStore {
   isEmergencyModalAlreadyDisplayed: boolean;
   realTimeAssist: Record<string, RealTimeAssistPayload[]>;
   offerActionErrors: Record<string, OfferActionErrorDisplay>;
-  aiSummaries: Record<string, AISummaryEntries>;
+  aiSummaries: Record<string, Partial<Record<AISummaryRole, AISummaryEntry>>>;
   init(params: InitParams, callback: (ccSDK: IContactCenter) => void): Promise<void>;
   registerCC(webex?: WithWebex['webex']): Promise<void>;
 }
@@ -271,23 +277,28 @@ interface IStoreWrapper extends IStore {
   setOfferActionError(interactionId: string, error: OfferActionErrorDisplay | null): void;
   clearOfferActionError(interactionId: string): void;
   pruneOfferActionErrors(activeInteractionIds: Set<string>): void;
-  requestMidCallSummary(actionType: AISummaryActionType, task?: ITask): Promise<void>;
+  requestMidCallSummary(action: AISummaryAction, task?: ITask): Promise<void>;
   requestPostCallSummary(task?: ITask): Promise<void>;
-  editAISummary(role: AISummaryRole, field: AISummaryEditableField, expectedRevision: number, task?: ITask): boolean;
-  recordAISummaryCopied(role: AISummaryRole, expectedRevision: number, task?: ITask): boolean;
-  setMidCallSummaryFeedback(
-    role: AISummaryMidCallRole,
-    feedback: Exclude<AISummaryFeedback, 'none'>,
-    actionType: AISummaryActionType,
+  editAISummary(
+    role: AISummaryRole,
+    key: keyof AISummarySections | 'summaryText',
+    value: string,
     expectedRevision: number,
     task?: ITask
-  ): Promise<AISummaryFeedbackResult>;
-  setPostCallSummaryFeedback(
+  ): boolean;
+  recordAISummaryCopied(role: AISummaryRole, expectedRevision: number, task?: ITask): boolean;
+  setAISummaryFeedback(
+    role: Exclude<AISummaryRole, 'receiver'>,
     feedback: Exclude<AISummaryFeedback, 'none'>,
     expectedRevision: number,
     task?: ITask
   ): boolean;
-  sendMidCallSummaryResponse(actionType: AISummaryActionType, task?: ITask): Promise<void>;
+  setReceiverSummaryFeedback(
+    feedback: Exclude<AISummaryFeedback, 'none'>,
+    expectedRevision: number,
+    task?: ITask
+  ): Promise<void>;
+  sendMidCallSummaryResponse(action: AISummaryAction, task?: ITask): Promise<void>;
   getPostCallSummaryResponse(wrapUpCode: string, task?: ITask): AISummaryResponse | undefined;
   sendPostCallSummaryResponse(response: AISummaryResponse, task?: ITask): Promise<'submitted' | 'response-failed'>;
   onAISummaryStatusChange(listener: (detail: AISummaryStatusDetail) => void): () => void;
@@ -429,6 +440,11 @@ export type {
   RealTimeAssistUserActionId,
   RealTimeAssistUserActionParams,
   OfferActionErrorDisplay,
+  AISummary,
+  AISummaryAction,
+  AISummaryFeedback,
+  AISummaryResponse,
+  AISummarySections,
 };
 
 export {
@@ -553,84 +569,18 @@ export const CAMPAIGN_PREVIEW_OUTBOUND_TYPES = ['STANDARD_PREVIEW_CAMPAIGN', 'DI
 /** Campaign type values (from callProcessingDetails) that identify a campaign preview task. */
 export const CAMPAIGN_PREVIEW_CAMPAIGN_TYPES = ['preview_standard', 'preview_direct'];
 
-export type AISummaryActionType = SDKAISummaryAction;
 /** The consult/transfer initiator's summary, the receiving agent's summary, or the wrap-up summary. */
 export type AISummaryRole = 'initiator' | 'receiver' | 'post-call';
-export type AISummaryMidCallRole = Exclude<AISummaryRole, 'post-call'>;
-
-export type AISummarySectionKey =
-  | 'initialContactReason'
-  | 'additionalContactReasons'
-  | 'additionalContext'
-  | 'keyActionsTaken'
-  | 'nextSteps'
-  | 'reasonForTransferOrConsult';
-
-export type AISummaryPostCallSectionKey = Extract<
-  AISummarySectionKey,
-  'initialContactReason' | 'additionalContactReasons' | 'additionalContext' | 'keyActionsTaken' | 'nextSteps'
->;
-
-export type AISummaryResolutionDisplayKey = 'resolution';
-export type AISummaryPostCallDisplaySectionKey = AISummaryPostCallSectionKey | AISummaryResolutionDisplayKey;
-export type AISummaryDisplaySectionKey = AISummarySectionKey | AISummaryResolutionDisplayKey;
-
-export type AISummarySection = {
-  key: AISummarySectionKey;
-  value: string;
-  editable: true;
-};
-
-export type AISummaryDisplaySection =
-  | AISummarySection
-  | {
-      key: AISummaryResolutionDisplayKey;
-      value: string;
-      editable: false;
-    };
-
-export type AISummaryEditableField = {
-  key: AISummarySectionKey | 'summaryText';
-  value: string;
-};
-
-export type AISummaryContent =
-  | {
-      type: 'sections';
-      sections: AISummarySection[];
-      resolution?: string;
-    }
-  | {
-      type: 'text';
-      summaryText: string;
-    }
-  | {
-      type: 'card';
-      adaptiveCard: unknown;
-    };
-
-export type AISummaryFeedback = 'none' | 'like' | 'dislike';
-/** Post-call feedback is only submitted with the final response after wrap-up. */
-export type AISummaryFeedbackStatus = 'pending';
-
-export type AISummaryFeedbackResult =
-  | {outcome: 'confirmed'}
-  | {outcome: 'failed'}
-  | {outcome: 'blocked'}
-  | {outcome: 'stale'};
-
-export type PostCallSubmissionResult =
-  | {wrapup: 'failed'}
-  | {wrapup: 'succeeded'; response: 'not-required' | 'submitted' | 'response-failed'};
-
-export type AISummarySurface = 'omitted' | 'generating' | 'unavailable' | 'generic-error' | 'content';
 
 /** One summary of an interaction, stored at `aiSummaries[interactionId][role]`. */
 export type AISummaryEntry = {
   /** Lifecycle of the latest request, or of the pushed receiver summary. */
   status: 'loading' | 'ready' | 'error';
-  /** Latest accepted content; kept while a newer request loads or after it fails. */
-  content?: AISummaryContent;
+  /**
+   * The SDK summary fields this role renders: the adaptive card for the receiving agent, otherwise sections (with
+   * the post-call resolution) or `summaryText`. Kept while a newer request loads or after it fails.
+   */
+  content?: Pick<AISummary, 'adaptiveCard' | 'sections' | 'resolution' | 'summaryText'>;
   /** Why the latest request failed; `unsupported` when the payload had nothing this role can render. */
   error?: 'failed' | 'unsupported';
   /** Bumped when a new summary arrives, so edits, copies and feedback apply to the summary that was shown. */
@@ -638,13 +588,11 @@ export type AISummaryEntry = {
   copied: number;
   edited: boolean;
   feedback: AISummaryFeedback;
-  /** A mid-call feedback response is being sent. */
+  /** The receiving agent's feedback response is being sent. */
   feedbackPending?: boolean;
   /** The consult or transfer a mid-call summary was generated for. */
-  actionType?: AISummaryActionType;
+  action?: AISummaryAction;
 };
-
-export type AISummaryEntries = Partial<Record<AISummaryRole, AISummaryEntry>>;
 
 /** Content-free summary status reported to the host through `onAISummaryStatusChange`. */
 export type AISummaryStatusDetail =

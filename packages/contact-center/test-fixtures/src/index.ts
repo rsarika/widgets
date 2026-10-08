@@ -1,6 +1,5 @@
 export * from './fixtures';
-export {aiSummaryFixtureGroupNames, aiSummaryFixtures} from './aiSummaryFixtures';
-export type {AISummaryFixtureGroupName} from './aiSummaryFixtures';
+export {aiSummaryFixtures} from './aiSummaryFixtures';
 export * from './incomingTaskFixtures';
 export * from './taskListFixtures';
 export * from './taskUIControlsFixtures';

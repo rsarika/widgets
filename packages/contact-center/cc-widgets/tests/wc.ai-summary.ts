@@ -2,38 +2,6 @@ import {act} from '@testing-library/react';
 import type {AISummaryStatusDetail} from '../src';
 import type {CallControlProps} from '@webex/cc-task';
 
-type ExpectedAISummaryStatusDetail =
-  | {kind: 'mid-call'; state: 'available' | 'unavailable'}
-  | {kind: 'post-call'; state: 'available' | 'unavailable' | 'submitted' | 'response-failed'};
-
-type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-    ? (<T>() => T extends B ? 1 : 2) extends <T>() => T extends A ? 1 : 2
-      ? true
-      : false
-    : false;
-type Assert<T extends true> = T;
-
-const _exactStatusDetail: Assert<Equal<AISummaryStatusDetail, ExpectedAISummaryStatusDetail>> = true;
-const _typedHandler: (detail: AISummaryStatusDetail) => void = () => undefined;
-
-// @ts-expect-error mid-call statuses cannot use post-call terminal states.
-const _invalidMidCallSubmitted: AISummaryStatusDetail = {kind: 'mid-call', state: 'submitted'};
-// @ts-expect-error mid-call statuses cannot use post-call response-failed.
-const _invalidMidCallResponseFailed: AISummaryStatusDetail = {kind: 'mid-call', state: 'response-failed'};
-// @ts-expect-error details have no sequence or extra payload.
-const _extraKey: AISummaryStatusDetail = {kind: 'post-call', state: 'submitted', sequence: 1};
-// @ts-expect-error unsupported values are not part of the callback contract.
-const _forbiddenValue: AISummaryStatusDetail = {kind: 'post-call', state: 'failed'};
-void [
-  _exactStatusDetail,
-  _typedHandler,
-  _invalidMidCallSubmitted,
-  _invalidMidCallResponseFailed,
-  _extraKey,
-  _forbiddenValue,
-];
-
 type AISummaryStatusCallback = NonNullable<CallControlProps['onAISummaryStatusChange']>;
 type RecordedCallControlProps = CallControlProps & Record<string, unknown>;
 type WebCallControlElement = HTMLElement & {

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import type {ITask} from '@webex/cc-store';
+import {ITask} from '@webex/cc-store';
 import {createEnabledMainTaskUIControls, enabledControl} from '@webex/test-fixtures';
 import {
   handleToggleHold,
@@ -20,7 +20,6 @@ import {
   handleButtonPress,
   applyWxAppTelephonyControlVisibility,
 } from '../../../../src/components/task/CallControl/call-control.utils';
-import type {WrapupCompletionResult} from '../../../../src/components/task/task.types';
 import * as utils from '../../../../src/utils';
 
 // Mock the external utilities
@@ -168,21 +167,19 @@ describe('CallControl Utils', () => {
   });
 
   describe('handleWrapupCall', () => {
-    it('should call wrapupCall and reset state when both reason and id are provided', async () => {
-      const mockWrapupCall = jest.fn().mockResolvedValue({wrapup: 'succeeded', response: 'not-required'});
+    it('should call wrapupCall and reset state when both reason and id are provided', () => {
+      const mockWrapupCall = jest.fn();
       const mockSetSelectedWrapupReason = jest.fn();
       const mockSetSelectedWrapupId = jest.fn();
 
-      await expect(
-        handleWrapupCall(
-          'Test Reason',
-          'test-id',
-          mockWrapupCall,
-          mockSetSelectedWrapupReason,
-          mockSetSelectedWrapupId,
-          loggerMock
-        )
-      ).resolves.toEqual({wrapup: 'succeeded', response: 'not-required'});
+      handleWrapupCall(
+        'Test Reason',
+        'test-id',
+        mockWrapupCall,
+        mockSetSelectedWrapupReason,
+        mockSetSelectedWrapupId,
+        loggerMock
+      );
 
       expect(loggerMock.info).toHaveBeenCalledWith('CC-Widgets: CallControl: wrap-up submitted', {
         module: 'call-control.tsx',
@@ -195,136 +192,6 @@ describe('CallControl Utils', () => {
         module: 'call-control.tsx',
         method: 'handleWrapupCall',
       });
-    });
-
-    it('should treat a legacy void wrapupCall return as succeeded without an AI response', async () => {
-      const mockWrapupCall = jest.fn(() => undefined) as unknown as (
-        reason: string,
-        id: string
-      ) => Promise<WrapupCompletionResult>;
-      const mockSetSelectedWrapupReason = jest.fn();
-      const mockSetSelectedWrapupId = jest.fn();
-
-      await expect(
-        handleWrapupCall(
-          'Legacy Reason',
-          'legacy-id',
-          mockWrapupCall,
-          mockSetSelectedWrapupReason,
-          mockSetSelectedWrapupId,
-          loggerMock
-        )
-      ).resolves.toEqual({wrapup: 'succeeded', response: 'not-required'});
-
-      expect(mockWrapupCall).toHaveBeenCalledWith('Legacy Reason', 'legacy-id');
-      expect(mockSetSelectedWrapupReason).toHaveBeenCalledWith(null);
-      expect(mockSetSelectedWrapupId).toHaveBeenCalledWith(null);
-      expect(loggerMock.log).toHaveBeenCalledWith('CC-Widgets: CallControl: wrapup completed', {
-        module: 'call-control.tsx',
-        method: 'handleWrapupCall',
-      });
-    });
-
-    it('should treat a non-result wrapupCall return as legacy fire-and-forget success', async () => {
-      const mockWrapupCall = jest.fn().mockResolvedValue('legacy-complete') as unknown as (
-        reason: string,
-        id: string
-      ) => Promise<WrapupCompletionResult>;
-      const mockSetSelectedWrapupReason = jest.fn();
-      const mockSetSelectedWrapupId = jest.fn();
-
-      await expect(
-        handleWrapupCall(
-          'Legacy Reason',
-          'legacy-id',
-          mockWrapupCall,
-          mockSetSelectedWrapupReason,
-          mockSetSelectedWrapupId,
-          loggerMock
-        )
-      ).resolves.toEqual({wrapup: 'succeeded', response: 'not-required'});
-
-      expect(mockSetSelectedWrapupReason).toHaveBeenCalledWith(null);
-      expect(mockSetSelectedWrapupId).toHaveBeenCalledWith(null);
-    });
-
-    it('should keep an explicit failed wrapupCall result authoritative', async () => {
-      const mockWrapupCall = jest.fn().mockResolvedValue({wrapup: 'failed'});
-      const mockSetSelectedWrapupReason = jest.fn();
-      const mockSetSelectedWrapupId = jest.fn();
-
-      await expect(
-        handleWrapupCall(
-          'Test Reason',
-          'test-id',
-          mockWrapupCall,
-          mockSetSelectedWrapupReason,
-          mockSetSelectedWrapupId,
-          loggerMock
-        )
-      ).resolves.toEqual({wrapup: 'failed'});
-
-      expect(mockSetSelectedWrapupReason).not.toHaveBeenCalled();
-      expect(mockSetSelectedWrapupId).not.toHaveBeenCalled();
-      expect(loggerMock.log).not.toHaveBeenCalled();
-    });
-
-    it.each([
-      {wrapup: 'succeeded' as const, response: 'submitted' as const},
-      {wrapup: 'succeeded' as const, response: 'response-failed' as const},
-    ])('should clear reason and id after successful wrapup with $response response', async (wrapupResult) => {
-      const mockWrapupCall = jest.fn().mockResolvedValue(wrapupResult);
-      const mockSetSelectedWrapupReason = jest.fn();
-      const mockSetSelectedWrapupId = jest.fn();
-
-      await expect(
-        handleWrapupCall(
-          'Test Reason',
-          'test-id',
-          mockWrapupCall,
-          mockSetSelectedWrapupReason,
-          mockSetSelectedWrapupId,
-          loggerMock
-        )
-      ).resolves.toEqual(wrapupResult);
-
-      expect(mockSetSelectedWrapupReason).toHaveBeenCalledWith(null);
-      expect(mockSetSelectedWrapupId).toHaveBeenCalledWith(null);
-      expect(loggerMock.log).toHaveBeenCalledWith('CC-Widgets: CallControl: wrapup completed', {
-        module: 'call-control.tsx',
-        method: 'handleWrapupCall',
-      });
-    });
-
-    it.each([
-      {
-        name: 'rejected',
-        wrapupCall: jest.fn().mockRejectedValue(new Error('Wrap-up rejected')),
-      },
-      {
-        name: 'synchronously thrown',
-        wrapupCall: jest.fn(() => {
-          throw new Error('Wrap-up threw');
-        }),
-      },
-    ])('should retain reason and id when wrapupCall is $name', async ({wrapupCall}) => {
-      const mockSetSelectedWrapupReason = jest.fn();
-      const mockSetSelectedWrapupId = jest.fn();
-
-      await expect(
-        handleWrapupCall(
-          'Test Reason',
-          'test-id',
-          wrapupCall,
-          mockSetSelectedWrapupReason,
-          mockSetSelectedWrapupId,
-          loggerMock
-        )
-      ).resolves.toEqual({wrapup: 'failed'});
-
-      expect(mockSetSelectedWrapupReason).not.toHaveBeenCalled();
-      expect(mockSetSelectedWrapupId).not.toHaveBeenCalled();
-      expect(loggerMock.log).not.toHaveBeenCalled();
     });
 
     it('should not call wrapupCall when reason is null', () => {

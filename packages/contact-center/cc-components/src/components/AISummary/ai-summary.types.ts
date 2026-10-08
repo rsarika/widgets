@@ -1,31 +1,13 @@
 import type {RefObject, TextareaHTMLAttributes} from 'react';
-import type {
-  AISummaryActionType,
-  AISummaryContent,
-  AISummaryDisplaySection,
-  AISummaryEditableField,
-  AISummaryFeedback,
-  AISummaryFeedbackResult,
-  AISummaryFeedbackStatus,
-  AISummarySurface,
-} from '@webex/cc-store';
+import type {AISummaryEntry, AISummaryFeedback, AISummarySections, getAISummarySurface} from '@webex/cc-store';
 
-export type AISummaryEditableContent = Extract<AISummaryContent, {type: 'sections' | 'text'}>;
+export type AISummaryPresentationState = Exclude<ReturnType<typeof getAISummarySurface>, 'omitted'>;
 
 export type AISummaryEditorProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value'> & {
   value: string;
 };
 
-export type AISummarySectionEditorProps = {
-  section: AISummaryDisplaySection;
-  disabled: boolean;
-  onChange: (value: string) => void;
-  onEditorBlur: () => void;
-};
-
-export type AISummaryCopyVisualState = 'idle' | 'hover' | 'confirmed';
-
-export type AISummaryPresentationState = Exclude<AISummarySurface, 'omitted'>;
+type AISummaryFeedbackHandler = (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) => void;
 
 type AISummaryBaseProps = {
   state: AISummaryPresentationState;
@@ -40,46 +22,33 @@ type AISummaryFocusFallbackProps = {
 };
 
 type AISummaryEditableActions = {
-  content: AISummaryEditableContent;
+  content: NonNullable<AISummaryEntry['content']>;
   contentRevision: number;
-  onEdit: (field: AISummaryEditableField, expectedRevision: number) => boolean;
+  onEdit: (key: keyof AISummarySections | 'summaryText', value: string, expectedRevision: number) => boolean;
   onCopy: (expectedRevision: number) => boolean;
-};
-
-type AISummaryMidCallFeedback = {
-  actionType: AISummaryActionType;
-  onFeedback: (
-    feedback: Exclude<AISummaryFeedback, 'none'>,
-    actionType: AISummaryActionType,
-    expectedRevision: number
-  ) => Promise<AISummaryFeedbackResult>;
+  onFeedback: AISummaryFeedbackHandler;
 };
 
 export type AISummaryMidCallInitiatorProps = AISummaryBaseProps &
-  AISummaryEditableActions &
-  AISummaryMidCallFeedback & {
+  AISummaryEditableActions & {
     mode: 'mid-call-initiator';
     onRetry?: never;
-    onComplete?: never;
-    onCopyVisualStateChange?: never;
   };
 
-export type AISummaryMidCallReceiverReadyProps = AISummaryFocusFallbackProps &
-  AISummaryMidCallFeedback & {
-    mode: 'mid-call-receiver';
-    state: 'content';
-    requestPending?: boolean;
-    controlsDisabled?: boolean;
-    selectedFeedback?: AISummaryFeedback;
-    contentRevision: number;
-    getReceiverCopyText: () => string;
-    onCopy: (expectedRevision: number) => boolean;
-    content?: never;
-    onEdit?: never;
-    onRetry?: never;
-    onComplete?: never;
-    onCopyVisualStateChange?: never;
-  };
+export type AISummaryMidCallReceiverReadyProps = AISummaryFocusFallbackProps & {
+  mode: 'mid-call-receiver';
+  state: 'content';
+  requestPending?: boolean;
+  controlsDisabled?: boolean;
+  selectedFeedback?: AISummaryFeedback;
+  contentRevision: number;
+  getReceiverCopyText: () => string;
+  onCopy: (expectedRevision: number) => boolean;
+  onFeedback: AISummaryFeedbackHandler;
+  content?: never;
+  onEdit?: never;
+  onRetry?: never;
+};
 
 export type AISummaryMidCallReceiverNonReadyProps = AISummaryFocusFallbackProps & {
   mode: 'mid-call-receiver';
@@ -90,13 +59,10 @@ export type AISummaryMidCallReceiverNonReadyProps = AISummaryFocusFallbackProps 
   contentRevision?: never;
   getReceiverCopyText?: never;
   onCopy?: never;
-  actionType?: never;
   onFeedback?: never;
   content?: never;
   onEdit?: never;
   onRetry?: never;
-  onComplete?: never;
-  onCopyVisualStateChange?: never;
 };
 
 export type AISummaryMidCallReceiverProps = AISummaryMidCallReceiverReadyProps | AISummaryMidCallReceiverNonReadyProps;
@@ -104,12 +70,7 @@ export type AISummaryMidCallReceiverProps = AISummaryMidCallReceiverReadyProps |
 export type AISummaryPostCallProps = AISummaryBaseProps &
   AISummaryEditableActions & {
     mode: 'post-call';
-    feedbackStatus?: AISummaryFeedbackStatus;
-    onFeedback: (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) => boolean;
     onRetry: () => Promise<void>;
-    onComplete?: () => void;
-    onCopyVisualStateChange: (state: AISummaryCopyVisualState) => void;
-    actionType?: never;
     getReceiverCopyText?: never;
   };
 

@@ -2,13 +2,7 @@ import React from 'react';
 import {render, fireEvent, waitFor, act} from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ConsultTransferPopoverComponent from '../../../../../src/components/task/CallControl/CallControlCustom/consult-transfer-popover';
-import {
-  AddressBookEntry,
-  AISummaryContent,
-  ContactServiceQueue,
-  EntryPointRecord,
-  TaskUIControls,
-} from '@webex/cc-store';
+import {AddressBookEntry, AISummaryEntry, ContactServiceQueue, EntryPointRecord, TaskUIControls} from '@webex/cc-store';
 import {DEFAULT_PAGE_SIZE, SEARCH_PLACEHOLDER} from '../../../../../src/components/task/constants';
 import {AI_SUMMARY_MESSAGES} from '../../../../../src/components/AISummary';
 
@@ -34,6 +28,17 @@ afterAll(() => {
 
 // This test suite was previously skipped but is now enabled for 100% coverage
 describe('ConsultTransferPopoverComponent', () => {
+  const createSummary = (overrides = {}) => ({
+    state: 'content' as const,
+    content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
+    contentRevision: 18,
+    selectedFeedback: 'none' as const,
+    onEdit: jest.fn(),
+    onCopy: jest.fn().mockReturnValue(true),
+    onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
+    ...overrides,
+  });
+
   const mockOnAgentSelect = jest.fn();
   const mockOnQueueSelect = jest.fn();
   const baseProps = {
@@ -79,7 +84,9 @@ describe('ConsultTransferPopoverComponent', () => {
   });
 
   it('uses capability-filtered voice radios before search and keeps nonvoice pills', async () => {
-    const view = render(<ConsultTransferPopoverComponent {...baseProps} isTelephony />);
+    const view = render(
+      <ConsultTransferPopoverComponent {...baseProps} isTelephony summary={createSummary({state: 'omitted'})} />
+    );
     const radios = view.getAllByRole('radio');
     expect(radios).toHaveLength(4);
     expect(view.getByRole('radio', {name: 'Agent'})).toBeChecked();
@@ -99,11 +106,16 @@ describe('ConsultTransferPopoverComponent', () => {
     fireEvent.click(view.getByRole('radio', {name: 'Queues'}));
     await waitFor(() => expect(view.getByText('Queue One')).toBeInTheDocument());
     expect(view.getByRole('radio', {name: 'Queues'})).toBeChecked();
-    view.rerender(<ConsultTransferPopoverComponent {...baseProps} isTelephony availableDestinations={['agent']} />);
+    view.rerender(
+      <ConsultTransferPopoverComponent
+        {...baseProps}
+        isTelephony
+        summary={createSummary({state: 'omitted'})}
+        availableDestinations={['agent']}
+      />
+    );
     expect(view.getAllByRole('radio')).toHaveLength(1);
     expect(view.queryByText('Organization')).not.toBeInTheDocument();
-    view.rerender(<ConsultTransferPopoverComponent {...baseProps} isTelephony={false} />);
-    expect(view.getByRole('radiogroup', {name: AI_SUMMARY_MESSAGES.midCall.destinationCategory})).toBeInTheDocument();
     view.unmount();
 
     const nonVoice = render(<ConsultTransferPopoverComponent {...baseProps} isTelephony={false} />);
@@ -295,17 +307,6 @@ describe('ConsultTransferPopoverComponent', () => {
     expect(buttons).toEqual(expect.arrayContaining(['Agents', 'Queues', 'Dial Number', 'Entry Point']));
     expect(screen.container.querySelector('.consult-empty-state')).toBeInTheDocument();
     expect(screen.getByText('No data available for consult transfer.')).toBeInTheDocument();
-  });
-
-  it('requests agents from the mounted popover when the Agents category opens empty', async () => {
-    const loadBuddyAgents = jest.fn().mockResolvedValue(undefined);
-
-    render(
-      <ConsultTransferPopoverComponent {...baseProps} buddyAgents={[]} loadBuddyAgents={loadBuddyAgents} isTelephony />
-    );
-
-    await waitFor(() => expect(loadBuddyAgents).toHaveBeenCalledTimes(1));
-    expect(loadBuddyAgents).toHaveBeenCalledWith('Consult');
   });
 
   it('shows no items when queues are empty after switching to queues', async () => {
@@ -694,18 +695,6 @@ describe('ConsultTransferPopoverComponent', () => {
   });
 
   describe('AI summary subtree', () => {
-    const createSummary = (overrides = {}) => ({
-      state: 'content' as const,
-      content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
-      contentRevision: 18,
-      actionType: 'CONSULT' as const,
-      selectedFeedback: 'none' as const,
-      onEdit: jest.fn(),
-      onCopy: jest.fn().mockReturnValue(true),
-      onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
-      ...overrides,
-    });
-
     it('renders the summary after the destination results without replacing the single search/results tree', async () => {
       const screen = render(
         <ConsultTransferPopoverComponent
@@ -713,9 +702,8 @@ describe('ConsultTransferPopoverComponent', () => {
           heading="Consult"
           summary={{
             state: 'content',
-            content: {type: 'text', summaryText: 'Customer needs billing support.'},
+            content: {summaryText: 'Customer needs billing support.'},
             contentRevision: 11,
-            actionType: 'CONSULT',
             selectedFeedback: 'none',
             onEdit: jest.fn(),
             onCopy: jest.fn().mockReturnValue(true),
@@ -732,7 +720,14 @@ describe('ConsultTransferPopoverComponent', () => {
     });
 
     it('preserves the open destination tree, query, selected category and focus when the summary arrives and is revoked', async () => {
-      const view = render(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony />);
+      const view = render(
+        <ConsultTransferPopoverComponent
+          {...baseProps}
+          heading="Consult"
+          isTelephony
+          summary={createSummary({state: 'omitted'})}
+        />
+      );
       const queueRadio = view.getByRole('radio', {name: 'Queues'});
       fireEvent.click(queueRadio);
       await waitFor(() => expect(view.getByText('Queue One')).toBeInTheDocument());
@@ -785,6 +780,7 @@ describe('ConsultTransferPopoverComponent', () => {
           {...baseProps}
           heading="Consult"
           isTelephony
+          summary={createSummary({state: 'omitted'})}
           consultTransferOptions={filterToAgentsAndQueues}
         />
       );
@@ -815,7 +811,9 @@ describe('ConsultTransferPopoverComponent', () => {
 
     it('should let the agent pick a destination or quick action while a refreshed summary is generating', async () => {
       const summary = createSummary({requestPending: true});
-      const view = render(<ConsultTransferPopoverComponent {...baseProps} heading="Consult" summary={summary} />);
+      const view = render(
+        <ConsultTransferPopoverComponent {...baseProps} heading="Consult" isTelephony summary={summary} />
+      );
       const firstAgentButton = view.container.querySelector(
         'button[aria-label="Select Agent One"]'
       ) as HTMLButtonElement;
@@ -824,7 +822,7 @@ describe('ConsultTransferPopoverComponent', () => {
       fireEvent.click(firstAgentButton);
       expect(mockOnAgentSelect).toHaveBeenCalledWith('agent1', 'Agent One', false);
 
-      fireEvent.click(view.getByRole('button', {name: 'Dial Number'}));
+      fireEvent.click(view.getByRole('radio', {name: 'Dial number'}));
       const input = view.getByRole('textbox', {
         name: AI_SUMMARY_MESSAGES.midCall.searchDestinations,
       }) as HTMLInputElement;
@@ -845,9 +843,8 @@ describe('ConsultTransferPopoverComponent', () => {
           action="Transfer"
           summary={{
             state: 'unavailable',
-            content: {type: 'text', summaryText: ''},
+            content: {summaryText: ''},
             contentRevision: 0,
-            actionType: 'TRANSFER',
             selectedFeedback: 'none',
             onEdit: jest.fn(),
             onCopy: jest.fn().mockReturnValue(false),
@@ -865,7 +862,6 @@ describe('ConsultTransferPopoverComponent', () => {
         state: 'content' as const,
         content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
         contentRevision: 12,
-        actionType: 'CONSULT' as const,
         selectedFeedback: 'none' as const,
         onEdit: jest.fn(),
         onCopy: jest.fn().mockReturnValue(true),
@@ -892,16 +888,14 @@ describe('ConsultTransferPopoverComponent', () => {
     });
 
     it('moves focus to the next summary control on content replacement and the popover root when controls disappear', async () => {
-      const firstContent: AISummaryContent = {
-        type: 'sections',
-        sections: [
-          {key: 'initialContactReason', value: 'Summary value', editable: true},
-          {key: 'nextSteps', value: 'Follow-up value', editable: true},
-        ],
+      const firstContent: NonNullable<AISummaryEntry['content']> = {
+        sections: {
+          initialContactReason: 'Summary value',
+          nextSteps: 'Follow-up value',
+        },
       };
-      const followUpOnlyContent: AISummaryContent = {
-        type: 'sections',
-        sections: [{key: 'nextSteps', value: 'Follow-up value', editable: true}],
+      const followUpOnlyContent: NonNullable<AISummaryEntry['content']> = {
+        sections: {nextSteps: 'Follow-up value'},
       };
       const view = render(
         <ConsultTransferPopoverComponent
@@ -971,6 +965,7 @@ describe('ConsultTransferPopoverComponent', () => {
                 {...baseProps}
                 heading="Consult"
                 isTelephony
+                summary={createSummary({state: 'omitted'})}
                 onClose={() => {
                   setIsOpen(false);
                   openerRef.current?.focus();

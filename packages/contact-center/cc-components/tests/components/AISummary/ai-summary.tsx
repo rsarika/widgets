@@ -1,30 +1,31 @@
 import React from 'react';
 import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import '@testing-library/jest-dom';
-import type {AISummaryContent} from '@webex/cc-store';
+import type {AISummaryEntry} from '@webex/cc-store';
 import AISummaryComponent, {
   AI_SUMMARY_MESSAGES,
-  COPIED_FEEDBACK_MS,
-  POST_CALL_DISPLAY_SECTION_ORDER,
-  projectPostCallDisplaySections,
+  AI_SUMMARY_SECTION_ORDER,
+  getDisplaySections,
 } from '../../../src/components/AISummary';
 
+type AISummaryContent = NonNullable<AISummaryEntry['content']>;
+import {COPIED_FEEDBACK_MS} from '../../../src/components/AIAssistant/constants';
+
 const sectionContent: AISummaryContent = {
-  type: 'sections',
-  sections: [
-    {key: 'initialContactReason', value: 'Customer asked for invoice help.', editable: true},
-    {key: 'nextSteps', value: 'Send the updated invoice.', editable: true},
-  ],
+  sections: {
+    initialContactReason: 'Customer asked for invoice help.',
+    nextSteps: 'Send the updated invoice.',
+  },
   resolution: 'Correction approved',
 };
 
 const textContent: AISummaryContent = {
-  type: 'text',
   summaryText: 'Customer asked for invoice help.',
 };
 
 const COMPLETE_WRAP_UP_LABEL = 'Complete Wrap-Up';
-const POST_CALL_DISPLAY_SECTION_KEYS = [
+const SECTION_DISPLAY_KEYS = [
+  'reasonForTransferOrConsult',
   'initialContactReason',
   'additionalContactReasons',
   'additionalContext',
@@ -60,31 +61,6 @@ const clipboardWrite = (impl: (value: string) => Promise<void>) => {
   });
 };
 
-const createDeferredClipboardWrite = () => {
-  let resolveWrite: () => void = () => undefined;
-  const promise = new Promise<void>((resolve) => {
-    resolveWrite = resolve;
-  });
-  return {
-    promise,
-    resolve: resolveWrite,
-  };
-};
-
-const createDeferred = <T,>() => {
-  let resolveDeferred: (value: T) => void = () => undefined;
-  let rejectDeferred: (reason?: unknown) => void = () => undefined;
-  const promise = new Promise<T>((resolve, reject) => {
-    resolveDeferred = resolve;
-    rejectDeferred = reject;
-  });
-  return {
-    promise,
-    resolve: resolveDeferred,
-    reject: rejectDeferred,
-  };
-};
-
 const flushSettledCallbacks = async () => {
   await act(async () => {
     await Promise.resolve();
@@ -102,29 +78,6 @@ const flushUnhandledRejectionQueues = async () => {
   await act(async () => {
     await Promise.resolve();
   });
-};
-
-// Native Promise rejections are owned by Jest's runner and fail the test there.
-// A listener on the sandbox's process object cannot prove their absence. Browser
-// rejection observability is exercised separately with a real native rejection.
-const trackWindowFailures = () => {
-  const errors: ErrorEvent[] = [];
-  const error = (event: ErrorEvent) => {
-    if (!event.error && !event.message) {
-      return;
-    }
-    event.preventDefault();
-    errors.push(event);
-  };
-  window.addEventListener('error', error);
-  return {
-    assertNone: () => {
-      expect(errors).toHaveLength(0);
-    },
-    cleanup: () => {
-      window.removeEventListener('error', error);
-    },
-  };
 };
 
 const getActionWrapper = (button: HTMLElement): HTMLElement => {
@@ -167,20 +120,18 @@ const receiverContentIsRejected: React.ComponentProps<typeof AISummaryComponent>
   mode: 'mid-call-receiver',
   state: 'content',
   contentRevision: 1,
-  actionType: 'TRANSFER',
   content: textContent,
   getReceiverCopyText: () => 'Receiver text',
   onCopy: () => true,
   onFeedback: async () => ({outcome: 'confirmed'}),
   containingPanelFocusTarget: typeOnlyPanelRef,
 };
+// @ts-expect-error Receiver card content must not be accepted by the shared presentation component props.
 const receiverCardContentIsRejected: React.ComponentProps<typeof AISummaryComponent> = {
   mode: 'mid-call-receiver',
   state: 'content',
   contentRevision: 1,
-  actionType: 'TRANSFER',
-  // @ts-expect-error Receiver card content must not be accepted by the shared presentation component props.
-  content: {type: 'card', adaptiveCard: {type: 'AdaptiveCard'}},
+  content: {adaptiveCard: {type: 'AdaptiveCard'}},
   getReceiverCopyText: () => 'Receiver text',
   onCopy: () => true,
   onFeedback: async () => ({outcome: 'confirmed'}),
@@ -190,7 +141,6 @@ const receiverChildrenAreRejected: React.ComponentProps<typeof AISummaryComponen
   mode: 'mid-call-receiver',
   state: 'content',
   contentRevision: 1,
-  actionType: 'TRANSFER',
   getReceiverCopyText: () => 'Receiver text',
   onCopy: () => true,
   onFeedback: async () => ({outcome: 'confirmed'}),
@@ -209,7 +159,6 @@ const postCallActionTypeIsRejected: React.ComponentProps<typeof AISummaryCompone
   onCopy: jest.fn(),
   onFeedback: jest.fn(),
   onRetry: jest.fn(),
-  onCopyVisualStateChange: jest.fn(),
   containingPanelFocusTarget: typeOnlyPanelRef,
 };
 const initiatorReceiverCopyIsRejected: React.ComponentProps<typeof AISummaryComponent> = {
@@ -217,7 +166,6 @@ const initiatorReceiverCopyIsRejected: React.ComponentProps<typeof AISummaryComp
   state: 'content',
   content: textContent,
   contentRevision: 1,
-  actionType: 'CONSULT',
   onEdit: jest.fn(),
   onCopy: jest.fn(),
   onFeedback: jest.fn(),
@@ -239,21 +187,21 @@ describe('AISummary', () => {
     clipboardWrite(() => Promise.resolve());
   });
 
-  it('exports a unique display ordinal and inserts Outcome without reordering SDK sections', () => {
+  it('exports a unique display order and places Outcome among the SDK sections', () => {
     expect(AI_SUMMARY_MESSAGES.postCall.completeAction).toBe(COMPLETE_WRAP_UP_LABEL);
-    expect(POST_CALL_DISPLAY_SECTION_ORDER).toEqual(POST_CALL_DISPLAY_SECTION_KEYS);
-    expect([...new Set(POST_CALL_DISPLAY_SECTION_ORDER)]).toEqual(POST_CALL_DISPLAY_SECTION_ORDER);
-    const projected = projectPostCallDisplaySections(sectionContent);
+    expect(AI_SUMMARY_SECTION_ORDER).toEqual(SECTION_DISPLAY_KEYS);
+    expect([...new Set(AI_SUMMARY_SECTION_ORDER)]).toEqual(AI_SUMMARY_SECTION_ORDER);
+    const projected = getDisplaySections(sectionContent);
     expect(projected.map((section) => section.key)).toEqual(['initialContactReason', 'resolution', 'nextSteps']);
     expect(projected.find((section) => section.key === 'resolution')).toMatchObject({
       value: 'Correction approved',
-      editable: false,
     });
 
-    expect(
-      projectPostCallDisplaySections({...sectionContent, resolution: undefined}).map((section) => section.key)
-    ).toEqual(['initialContactReason', 'nextSteps']);
-    expect(projectPostCallDisplaySections({...sectionContent, resolution: ''}).map((section) => section.key)).toEqual([
+    expect(getDisplaySections({...sectionContent, resolution: undefined}).map((section) => section.key)).toEqual([
+      'initialContactReason',
+      'nextSteps',
+    ]);
+    expect(getDisplaySections({...sectionContent, resolution: ''}).map((section) => section.key)).toEqual([
       'initialContactReason',
       'nextSteps',
     ]);
@@ -270,7 +218,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -292,7 +239,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -314,7 +260,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -331,7 +276,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByText(LITERAL_SUMMARY_COPY.unavailable)).toBeInTheDocument();
@@ -346,7 +290,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByRole('heading', {name: LITERAL_SUMMARY_COPY.generationError})).toBeInTheDocument();
@@ -363,7 +306,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary})).toBeInTheDocument();
@@ -383,7 +325,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByTestId('ai-summary:content')).toBeInTheDocument();
@@ -398,7 +339,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByTestId('ai-summary:generating')).toBeInTheDocument();
@@ -413,7 +353,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByText(AI_SUMMARY_MESSAGES.unavailable)).toBeInTheDocument();
@@ -428,7 +367,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(screen.getByTestId('ai-summary:error')).toBeInTheDocument();
@@ -453,7 +391,6 @@ describe('AISummary', () => {
       onCopy: jest.fn(),
       onFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
       onRetry: jest.fn().mockResolvedValue({outcome: 'blocked'}),
-      onCopyVisualStateChange: jest.fn(),
     };
 
     if (mode === 'mid-call-receiver' && state !== 'content') {
@@ -464,7 +401,6 @@ describe('AISummary', () => {
           mode={mode}
           state={state}
           contentRevision={41}
-          actionType="TRANSFER"
           getReceiverCopyText={() => 'Visible receiver copy'}
           onCopy={jest.fn().mockReturnValue(true)}
           onFeedback={jest.fn().mockResolvedValue({outcome: 'confirmed'})}
@@ -477,7 +413,6 @@ describe('AISummary', () => {
           state={state}
           content={textContent}
           contentRevision={41}
-          actionType="CONSULT"
           onEdit={sharedCallbacks.onEdit}
           onCopy={sharedCallbacks.onCopy}
           onFeedback={sharedCallbacks.onFeedback}
@@ -494,7 +429,6 @@ describe('AISummary', () => {
           onCopy={sharedCallbacks.onCopy}
           onFeedback={jest.fn().mockReturnValue(true)}
           onRetry={sharedCallbacks.onRetry}
-          onCopyVisualStateChange={sharedCallbacks.onCopyVisualStateChange}
         />
       );
     }
@@ -532,7 +466,6 @@ describe('AISummary', () => {
           onCopy={jest.fn()}
           onFeedback={jest.fn()}
           onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
         />
       );
 
@@ -552,7 +485,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -583,7 +515,7 @@ describe('AISummary', () => {
     );
     expect(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason})).toHaveFocus();
     fireEvent.change(screen.getByDisplayValue('Customer asked for invoice help.'), {target: {value: ''}});
-    expect(onEdit).toHaveBeenCalledWith({key: 'initialContactReason', value: ''}, 7);
+    expect(onEdit).toHaveBeenCalledWith('initialContactReason', '', 7);
     fireEvent.blur(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason}));
     expect(
       screen.getByRole('button', {
@@ -606,7 +538,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn()}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
     expect(
@@ -625,20 +556,11 @@ describe('AISummary', () => {
 
   it('applies automatic direction to mixed-direction structured summary text boundaries', () => {
     const bidiContent: AISummaryContent = {
-      type: 'sections',
-      sections: [
-        {key: 'initialContactReason', value: 'שלום ticket 42', editable: true},
-        {
-          key: 'keyActionsTaken',
-          value: '• اتصل بالعميل\n- Send invoice INV-42',
-          editable: true,
-        },
-        {
-          key: 'nextSteps',
-          value: '• שלח טופס\n* Schedule follow-up',
-          editable: true,
-        },
-      ],
+      sections: {
+        initialContactReason: 'שלום ticket 42',
+        keyActionsTaken: '• اتصل بالعميل\n- Send invoice INV-42',
+        nextSteps: '• שלח טופס\n* Schedule follow-up',
+      },
     };
     render(
       <AISummary
@@ -650,7 +572,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -688,17 +609,16 @@ describe('AISummary', () => {
 
   it('projects every post-call display section in canonical order and appends Outcome when needed', () => {
     const completeContent: AISummaryContent = {
-      type: 'sections',
-      sections: [
-        {key: 'initialContactReason', value: 'Summary value', editable: true},
-        {key: 'additionalContactReasons', value: 'Billing help', editable: true},
-        {key: 'additionalContext', value: 'Positive', editable: true},
-        {key: 'keyActionsTaken', value: 'Send invoice', editable: true},
-        {key: 'nextSteps', value: 'Escalate adjustment', editable: true},
-      ],
+      sections: {
+        initialContactReason: 'Summary value',
+        additionalContactReasons: 'Billing help',
+        additionalContext: 'Positive',
+        keyActionsTaken: 'Send invoice',
+        nextSteps: 'Escalate adjustment',
+      },
       resolution: 'Resolved after adjustment',
     };
-    const projected = projectPostCallDisplaySections(completeContent);
+    const projected = getDisplaySections(completeContent);
 
     expect(projected.map((section) => section.key)).toEqual([
       'initialContactReason',
@@ -709,23 +629,21 @@ describe('AISummary', () => {
       'nextSteps',
     ]);
     expect(projected.map((section) => section.value)).toContain('Resolved after adjustment');
-    expect(projectPostCallDisplaySections({...completeContent, resolution: undefined})).not.toContainEqual(
+    expect(getDisplaySections({...completeContent, resolution: undefined})).not.toContainEqual(
       expect.objectContaining({key: 'resolution'})
     );
     expect(
-      projectPostCallDisplaySections({
-        type: 'sections',
-        sections: [
-          {key: 'initialContactReason', value: 'Only summary', editable: true},
-          {key: 'keyActionsTaken', value: 'Already before resolution', editable: true},
-        ],
+      getDisplaySections({
+        sections: {
+          initialContactReason: 'Only summary',
+          keyActionsTaken: 'Already before resolution',
+        },
         resolution: 'Appended resolution',
       }).map((section) => section.key)
     ).toEqual(['initialContactReason', 'keyActionsTaken', 'resolution']);
     expect(
-      projectPostCallDisplaySections({
-        type: 'sections',
-        sections: [{key: 'nextSteps', value: 'Last ordered section', editable: true}],
+      getDisplaySections({
+        sections: {nextSteps: 'Last ordered section'},
         resolution: 'Inserted resolution',
       }).map((section) => section.key)
     ).toEqual(['resolution', 'nextSteps']);
@@ -733,19 +651,10 @@ describe('AISummary', () => {
 
   it('renders injected labels and values as text without live-region announcements', () => {
     const maliciousContent: AISummaryContent = {
-      type: 'sections',
-      sections: [
-        {
-          key: 'initialContactReason',
-          value: '<script>alert("summary")</script>',
-          editable: true,
-        },
-        {
-          key: 'nextSteps',
-          value: '<b onclick=alert(2)>Follow up</b>',
-          editable: true,
-        },
-      ],
+      sections: {
+        initialContactReason: '<script>alert("summary")</script>',
+        nextSteps: '<b onclick=alert(2)>Follow up</b>',
+      },
     };
     const {container} = render(
       <AISummary
@@ -757,7 +666,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -773,7 +681,6 @@ describe('AISummary', () => {
   it('observes clipboard fulfillment before recording copy and reverts confirmed state at 1500 ms', async () => {
     jest.useFakeTimers();
     const onCopy = jest.fn().mockReturnValue(true);
-    const onCopyVisualStateChange = jest.fn();
     clipboardWrite(() => Promise.resolve());
 
     render(
@@ -786,7 +693,6 @@ describe('AISummary', () => {
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
       />
     );
 
@@ -814,13 +720,10 @@ describe('AISummary', () => {
       AI_SUMMARY_MESSAGES.copySummary
     );
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
-    expect(onCopyVisualStateChange).toHaveBeenCalledWith('confirmed');
-    expect(onCopyVisualStateChange).toHaveBeenLastCalledWith('idle');
   });
 
   it('resets confirmed copy on blur and clears the accepted timer', async () => {
     jest.useFakeTimers();
-    const onCopyVisualStateChange = jest.fn();
     render(
       <AISummary
         mode="post-call"
@@ -831,7 +734,6 @@ describe('AISummary', () => {
         onCopy={jest.fn().mockReturnValue(true)}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
       />
     );
 
@@ -844,97 +746,11 @@ describe('AISummary', () => {
 
     expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copySummary);
     expect(jest.getTimerCount()).toBe(0);
-    expect(onCopyVisualStateChange.mock.calls).toEqual([['confirmed'], ['idle']]);
   });
 
-  it('resets a confirmed copy on the second gesture and starts a new timer only after fulfillment', async () => {
-    jest.useFakeTimers();
-    const firstWrite = createDeferredClipboardWrite();
-    const secondWrite = createDeferred<void>();
-    clipboardWrite(jest.fn().mockReturnValueOnce(firstWrite.promise).mockReturnValueOnce(secondWrite.promise));
-    const onCopy = jest.fn().mockReturnValue(true);
-
-    render(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={43}
-        onEdit={jest.fn()}
-        onCopy={onCopy}
-        onFeedback={jest.fn()}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-
-    const copy = screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary});
-    fireEvent.click(copy);
-    await act(async () => {
-      firstWrite.resolve();
-      await firstWrite.promise;
-    });
-    await waitFor(() => expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copied));
-    expect(jest.getTimerCount()).toBe(1);
-
-    fireEvent.click(copy);
-    expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copySummary);
-    expect(onCopy).toHaveBeenCalledTimes(1);
-    expect(jest.getTimerCount()).toBe(0);
-
-    await act(async () => {
-      secondWrite.resolve();
-      await secondWrite.promise;
-    });
-    await waitFor(() => expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copied));
-    expect(onCopy).toHaveBeenCalledTimes(2);
-    expect(jest.getTimerCount()).toBe(1);
-  });
-
-  it('leaves a rejected second copy idle without recording or retaining a timer', async () => {
-    jest.useFakeTimers();
-    const secondWrite = createDeferred<void>();
-    clipboardWrite(jest.fn().mockResolvedValueOnce(undefined).mockReturnValueOnce(secondWrite.promise));
-    const onCopy = jest.fn().mockReturnValue(true);
-    const onCopyVisualStateChange = jest.fn();
-
-    render(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={44}
-        onEdit={jest.fn()}
-        onCopy={onCopy}
-        onFeedback={jest.fn()}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
-      />
-    );
-
-    const copy = screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary});
-    fireEvent.click(copy);
-    await waitFor(() => expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copied));
-    fireEvent.click(copy);
-    expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copySummary);
-
-    await act(async () => {
-      secondWrite.reject(new Error('denied'));
-      await secondWrite.promise.catch(() => undefined);
-    });
-
-    expect(onCopy).toHaveBeenCalledTimes(1);
-    expect(copy).toHaveTextContent(LITERAL_SUMMARY_COPY.copySummary);
-    expect(jest.getTimerCount()).toBe(0);
-    expect(onCopyVisualStateChange.mock.calls).toEqual([['confirmed'], ['idle']]);
-  });
-
-  it('keeps stale or throwing copy recorders from painting success', async () => {
+  it('keeps a copy the store rejects as stale from painting success', async () => {
     const falseRecorder = jest.fn().mockReturnValue(false);
-    const throwingRecorder = jest.fn(() => {
-      throw new Error('stale recorder');
-    });
-    const {rerender} = render(
+    render(
       <AISummary
         mode="post-call"
         state="content"
@@ -944,31 +760,11 @@ describe('AISummary', () => {
         onCopy={falseRecorder}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
     fireEvent.click(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary}));
     await waitFor(() => expect(falseRecorder).toHaveBeenCalledWith(45));
-    expect(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary})).toHaveTextContent(
-      LITERAL_SUMMARY_COPY.copySummary
-    );
-
-    rerender(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={46}
-        onEdit={jest.fn()}
-        onCopy={throwingRecorder}
-        onFeedback={jest.fn()}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-    fireEvent.click(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary}));
-    await waitFor(() => expect(throwingRecorder).toHaveBeenCalledWith(46));
     expect(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.copySummary})).toHaveTextContent(
       LITERAL_SUMMARY_COPY.copySummary
     );
@@ -981,7 +777,6 @@ describe('AISummary', () => {
         mode="mid-call-receiver"
         state="content"
         contentRevision={47}
-        actionType="TRANSFER"
         getReceiverCopyText={() => {
           throw new Error('no rendered receiver text');
         }}
@@ -1008,7 +803,6 @@ describe('AISummary', () => {
         mode="mid-call-receiver"
         state="content"
         contentRevision={48}
-        actionType="TRANSFER"
         getReceiverCopyText={() => 'Visible receiver copy'}
         onCopy={onCopy}
         onFeedback={jest.fn().mockResolvedValue({outcome: 'confirmed'})}
@@ -1030,7 +824,6 @@ describe('AISummary', () => {
         mode="mid-call-receiver"
         state="content"
         contentRevision={49}
-        actionType="TRANSFER"
         getReceiverCopyText={() => 'Visible receiver copy'}
         onCopy={onCopy}
         onFeedback={jest.fn().mockResolvedValue({outcome: 'confirmed'})}
@@ -1055,7 +848,6 @@ describe('AISummary', () => {
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -1077,7 +869,6 @@ describe('AISummary', () => {
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -1092,25 +883,22 @@ describe('AISummary', () => {
 
   it('blocks empty plain, structured and receiver copy output before Clipboard access', () => {
     const onCopy = jest.fn().mockReturnValue(true);
-    const onCopyVisualStateChange = jest.fn();
     const {rerender, unmount} = render(
       <AISummary
         mode="post-call"
         state="content"
-        content={{type: 'text', summaryText: ' \n\t '}}
+        content={{summaryText: ' \n\t '}}
         contentRevision={18}
         onEdit={jest.fn()}
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
       />
     );
 
     fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
     expect(onCopy).not.toHaveBeenCalled();
-    expect(onCopyVisualStateChange).not.toHaveBeenCalled();
     expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toHaveTextContent(
       AI_SUMMARY_MESSAGES.copySummary
     );
@@ -1120,8 +908,7 @@ describe('AISummary', () => {
         mode="post-call"
         state="content"
         content={{
-          type: 'sections',
-          sections: [{key: 'initialContactReason', value: ' ', editable: true}],
+          sections: {initialContactReason: ' '},
           resolution: '',
         }}
         contentRevision={19}
@@ -1129,13 +916,11 @@ describe('AISummary', () => {
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
       />
     );
     fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
     expect(onCopy).not.toHaveBeenCalled();
-    expect(onCopyVisualStateChange).not.toHaveBeenCalled();
 
     unmount();
     render(
@@ -1143,7 +928,6 @@ describe('AISummary', () => {
         mode="mid-call-receiver"
         state="content"
         contentRevision={20}
-        actionType="TRANSFER"
         getReceiverCopyText={jest.fn().mockReturnValue('')}
         onCopy={onCopy}
         onFeedback={jest.fn().mockResolvedValue({outcome: 'confirmed'})}
@@ -1155,42 +939,9 @@ describe('AISummary', () => {
     expect(onCopy).not.toHaveBeenCalled();
   });
 
-  it('drops delayed clipboard fulfillment after unmount without recording or scheduling timers', async () => {
-    jest.useFakeTimers();
-    const firstWrite = createDeferredClipboardWrite();
-    clipboardWrite(() => firstWrite.promise);
-    const onCopy = jest.fn().mockReturnValue(true);
-    const onCopyVisualStateChange = jest.fn();
-    const {unmount} = render(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={20}
-        onEdit={jest.fn()}
-        onCopy={onCopy}
-        onFeedback={jest.fn()}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    unmount();
-    await act(async () => {
-      firstWrite.resolve();
-      await firstWrite.promise;
-    });
-
-    expect(onCopy).not.toHaveBeenCalled();
-    expect(onCopyVisualStateChange).not.toHaveBeenCalled();
-    expect(jest.getTimerCount()).toBe(0);
-  });
-
-  it('resets confirmation on content replacement without an initial idle callback', async () => {
+  it('resets confirmation on content replacement', async () => {
     jest.useFakeTimers();
     const onCopy = jest.fn().mockReturnValue(true);
-    const onCopyVisualStateChange = jest.fn();
     const {rerender} = render(
       <AISummary
         mode="post-call"
@@ -1201,107 +952,33 @@ describe('AISummary', () => {
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
       />
     );
-    expect(onCopyVisualStateChange).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    await waitFor(() => expect(onCopyVisualStateChange).toHaveBeenCalledWith('confirmed'));
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toHaveTextContent(
-      AI_SUMMARY_MESSAGES.copiedSummary
+    await waitFor(() =>
+      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toHaveTextContent(
+        AI_SUMMARY_MESSAGES.copiedSummary
+      )
     );
 
     rerender(
       <AISummary
         mode="post-call"
         state="content"
-        content={{type: 'text', summaryText: 'Replacement summary'}}
+        content={{summaryText: 'Replacement summary'}}
         contentRevision={22}
         onEdit={jest.fn()}
         onCopy={onCopy}
         onFeedback={jest.fn()}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
       />
     );
 
     expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toHaveTextContent(
       AI_SUMMARY_MESSAGES.copySummary
     );
-    expect(onCopyVisualStateChange.mock.calls).toEqual([['confirmed'], ['idle']]);
     expect(jest.getTimerCount()).toBe(0);
-  });
-
-  it('ignores superseded clipboard attempts and confirms only the current one', async () => {
-    jest.useFakeTimers();
-    const firstWrite = createDeferredClipboardWrite();
-    const secondWrite = createDeferredClipboardWrite();
-    clipboardWrite(jest.fn().mockReturnValueOnce(firstWrite.promise).mockReturnValueOnce(secondWrite.promise));
-    const onCopy = jest.fn().mockReturnValue(true);
-
-    render(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={23}
-        onEdit={jest.fn()}
-        onCopy={onCopy}
-        onFeedback={jest.fn()}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    await act(async () => {
-      firstWrite.resolve();
-      await firstWrite.promise;
-    });
-    expect(onCopy).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toHaveTextContent(
-      AI_SUMMARY_MESSAGES.copySummary
-    );
-
-    await act(async () => {
-      secondWrite.resolve();
-      await secondWrite.promise;
-    });
-    expect(onCopy).toHaveBeenCalledTimes(1);
-    expect(onCopy).toHaveBeenCalledWith(23);
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toHaveTextContent(
-      AI_SUMMARY_MESSAGES.copiedSummary
-    );
-  });
-
-  it('clears the accepted copy timer on unmount without reporting idle', async () => {
-    jest.useFakeTimers();
-    const onCopyVisualStateChange = jest.fn();
-    const {unmount} = render(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={24}
-        onEdit={jest.fn()}
-        onCopy={jest.fn().mockReturnValue(true)}
-        onFeedback={jest.fn()}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={onCopyVisualStateChange}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    await waitFor(() => expect(onCopyVisualStateChange).toHaveBeenCalledWith('confirmed'));
-    expect(jest.getTimerCount()).toBe(1);
-    unmount();
-    expect(jest.getTimerCount()).toBe(0);
-    act(() => {
-      jest.advanceTimersByTime(COPIED_FEEDBACK_MS);
-    });
-    expect(onCopyVisualStateChange.mock.calls).toEqual([['confirmed']]);
   });
 
   it('swallows clipboard rejection without recorder calls or success paint', async () => {
@@ -1313,7 +990,6 @@ describe('AISummary', () => {
         state="content"
         content={textContent}
         contentRevision={4}
-        actionType="CONSULT"
         onEdit={jest.fn()}
         onCopy={onCopy}
         onFeedback={jest.fn().mockResolvedValue({outcome: 'confirmed'})}
@@ -1329,23 +1005,21 @@ describe('AISummary', () => {
     );
   });
 
-  it('paints post-call feedback immediately with the pending description and removes it once submitted', () => {
-    const {rerender} = render(
+  it('shows the selected post-call feedback with the pending description', () => {
+    render(
       <AISummary
         mode="post-call"
         state="content"
         content={textContent}
         contentRevision={5}
-        feedbackStatus="pending"
+        selectedFeedback="thumbs_up"
         onEdit={jest.fn()}
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(true)}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
     const like = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like});
     const dislike = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike});
     const pendingDescription = screen.getByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission);
@@ -1356,56 +1030,37 @@ describe('AISummary', () => {
     expect(dislike).toHaveAttribute('aria-describedby', pendingDescriptionId);
     expect(like).toHaveAccessibleDescription(LITERAL_SUMMARY_COPY.pendingSubmission);
     expect(dislike).toHaveAccessibleDescription(LITERAL_SUMMARY_COPY.pendingSubmission);
-
-    rerender(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={5}
-        selectedFeedback="like"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={jest.fn().mockReturnValue(true)}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-    expect(screen.queryByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveAttribute('aria-describedby');
   });
 
-  it('keeps post-call feedback selected on repeat clicks and switches to the opposite choice', () => {
+  it('reports feedback clicks with the shown revision and paints the selection the store keeps', () => {
     const onFeedback = jest.fn().mockReturnValue(true);
-    render(
+    const renderSummary = (selectedFeedback?: 'thumbs_up' | 'thumbs_down') => (
       <AISummary
         mode="post-call"
         state="content"
         content={textContent}
         contentRevision={5}
+        selectedFeedback={selectedFeedback}
         onEdit={jest.fn()}
         onCopy={jest.fn()}
         onFeedback={onFeedback}
         onRetry={jest.fn()}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
+    const {rerender} = render(renderSummary());
     const like = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like});
     const dislike = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike});
     fireEvent.click(like);
-    fireEvent.click(like);
-    expect(like).toHaveAttribute('aria-pressed', 'true');
-    expect(dislike).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(dislike);
-    fireEvent.click(dislike);
+    expect(onFeedback.mock.calls).toEqual([
+      ['thumbs_up', 5],
+      ['thumbs_down', 5],
+    ]);
+    expect(like).toHaveAttribute('aria-pressed', 'false');
+
+    rerender(renderSummary('thumbs_down'));
     expect(like).toHaveAttribute('aria-pressed', 'false');
     expect(dislike).toHaveAttribute('aria-pressed', 'true');
-    expect(onFeedback.mock.calls).toEqual([
-      ['like', 5],
-      ['like', 5],
-      ['dislike', 5],
-      ['dislike', 5],
-    ]);
   });
 
   it('exposes exact accessible feedback labels and visible hover tooltips', () => {
@@ -1415,12 +1070,11 @@ describe('AISummary', () => {
         state="content"
         content={textContent}
         contentRevision={6}
-        selectedFeedback="like"
+        selectedFeedback="thumbs_up"
         onEdit={jest.fn()}
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(true)}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -1449,12 +1103,11 @@ describe('AISummary', () => {
         state="content"
         content={textContent}
         contentRevision={6}
-        selectedFeedback="like"
+        selectedFeedback="thumbs_up"
         onEdit={jest.fn()}
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(true)}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -1479,12 +1132,11 @@ describe('AISummary', () => {
           state="content"
           content={textContent}
           contentRevision={6}
-          selectedFeedback="like"
+          selectedFeedback="thumbs_up"
           onEdit={jest.fn()}
           onCopy={jest.fn()}
           onFeedback={jest.fn().mockReturnValue(true)}
           onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
         />
       </div>
     );
@@ -1516,7 +1168,6 @@ describe('AISummary', () => {
           onCopy={jest.fn()}
           onFeedback={jest.fn()}
           onRetry={jest.fn()}
-          onCopyVisualStateChange={jest.fn()}
         />
       </div>
     );
@@ -1536,193 +1187,6 @@ describe('AISummary', () => {
     expect(fireEvent.keyDown(document.body, {key: 'Escape'})).toBe(true);
   });
 
-  it('gates mid-call selected feedback on confirmed async result and preserves selection on failure', async () => {
-    const onFeedback = jest
-      .fn()
-      .mockResolvedValueOnce({outcome: 'failed'})
-      .mockResolvedValueOnce({outcome: 'confirmed'});
-    render(
-      <AISummary
-        mode="mid-call-initiator"
-        state="content"
-        content={textContent}
-        contentRevision={9}
-        selectedFeedback="none"
-        actionType="TRANSFER"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={onFeedback}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike}));
-    await waitFor(() => expect(onFeedback).toHaveBeenCalledWith('dislike', 'TRANSFER', 9));
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).not.toHaveClass(
-      'ai-summary__feedback-button--selected'
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike}));
-    await waitFor(() =>
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-        'ai-summary__feedback-button--selected'
-      )
-    );
-  });
-
-  it('contains synchronous feedback and Retry throws without changing selection', async () => {
-    const failures = trackWindowFailures();
-    try {
-      const {unmount} = render(
-        <AISummary
-          mode="post-call"
-          state="content"
-          content={textContent}
-          contentRevision={25}
-          selectedFeedback="dislike"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn(() => {
-            throw new Error('post-call feedback failed');
-          })}
-          onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
-        />
-      );
-
-      expect(() => fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}))).not.toThrow();
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      unmount();
-
-      const midCall = render(
-        <AISummary
-          mode="mid-call-initiator"
-          state="content"
-          content={textContent}
-          contentRevision={26}
-          selectedFeedback="dislike"
-          actionType="TRANSFER"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn(() => {
-            throw new Error('mid-call feedback failed');
-          })}
-        />
-      );
-
-      expect(() => fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}))).not.toThrow();
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      midCall.unmount();
-
-      render(
-        <AISummary
-          mode="post-call"
-          state="generic-error"
-          content={textContent}
-          contentRevision={27}
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockReturnValue(false)}
-          onRetry={jest.fn(() => {
-            throw new Error('retry failed');
-          })}
-          onCopyVisualStateChange={jest.fn()}
-        />
-      );
-
-      expect(() => fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.retry}))).not.toThrow();
-      await flushSettledCallbacks();
-      failures.assertNone();
-    } finally {
-      failures.cleanup();
-    }
-  });
-
-  it('normalizes non-thenable feedback and Retry returns', async () => {
-    const failures = trackWindowFailures();
-    try {
-      const {unmount} = render(
-        <AISummary
-          mode="mid-call-initiator"
-          state="content"
-          content={textContent}
-          contentRevision={28}
-          selectedFeedback="none"
-          actionType="CONSULT"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockReturnValue({outcome: 'confirmed'})}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-      await waitFor(() =>
-        expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toHaveClass(
-          'ai-summary__feedback-button--selected'
-        )
-      );
-      unmount();
-
-      render(
-        <AISummary
-          mode="post-call"
-          state="generic-error"
-          content={textContent}
-          contentRevision={29}
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockReturnValue(false)}
-          onRetry={jest.fn().mockReturnValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
-        />
-      );
-
-      expect(() => fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.retry}))).not.toThrow();
-      await flushSettledCallbacks();
-      failures.assertNone();
-    } finally {
-      failures.cleanup();
-    }
-  });
-
-  it('settles rejected Retry callbacks without a window error or selection churn', async () => {
-    const failures = trackWindowFailures();
-    try {
-      const onRetry = jest.fn().mockRejectedValue(new Error('retry rejected'));
-      render(
-        <AISummary
-          mode="post-call"
-          state="generic-error"
-          content={textContent}
-          contentRevision={50}
-          selectedFeedback="dislike"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockReturnValue(false)}
-          onRetry={onRetry}
-          onCopyVisualStateChange={jest.fn()}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.retry}));
-      await flushSettledCallbacks();
-
-      expect(onRetry).toHaveBeenCalledTimes(1);
-      failures.assertNone();
-    } finally {
-      failures.cleanup();
-    }
-  });
-
   it('routes Retry only from the generic-error surface and never renders it with retained content', async () => {
     const onRetry = jest.fn().mockResolvedValue({outcome: 'blocked'});
     const {rerender} = render(
@@ -1736,7 +1200,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(false)}
         onRetry={onRetry}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -1755,206 +1218,11 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(false)}
         onRetry={onRetry}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
     expect(screen.queryByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).not.toBeInTheDocument();
     expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it('preserves feedback selection for rejected and malformed callback results', async () => {
-    const failures = trackWindowFailures();
-    try {
-      const {unmount} = render(
-        <AISummary
-          mode="post-call"
-          state="content"
-          content={textContent}
-          contentRevision={30}
-          selectedFeedback="dislike"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockImplementation(() => Promise.reject(new Error('post-call rejected')))}
-          onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-      await flushSettledCallbacks();
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      unmount();
-
-      const rejectedMidCall = render(
-        <AISummary
-          mode="mid-call-initiator"
-          state="content"
-          content={textContent}
-          contentRevision={31}
-          selectedFeedback="dislike"
-          actionType="TRANSFER"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockRejectedValue(new Error('mid-call rejected'))}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-      await flushSettledCallbacks();
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      rejectedMidCall.unmount();
-
-      render(
-        <AISummary
-          mode="mid-call-initiator"
-          state="content"
-          content={textContent}
-          contentRevision={32}
-          selectedFeedback="dislike"
-          actionType="TRANSFER"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockResolvedValue(undefined)}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-      await flushSettledCallbacks();
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-        'ai-summary__feedback-button--selected'
-      );
-      failures.assertNone();
-    } finally {
-      failures.cleanup();
-    }
-  });
-
-  it('ignores stale mid-call feedback confirmations after content replacement', async () => {
-    const feedback = createDeferred<{outcome: 'confirmed'}>();
-    const onFeedback = jest.fn().mockReturnValue(feedback.promise);
-    const {rerender} = render(
-      <AISummary
-        mode="mid-call-initiator"
-        state="content"
-        content={textContent}
-        contentRevision={33}
-        selectedFeedback="none"
-        actionType="TRANSFER"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={onFeedback}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-    expect(onFeedback).toHaveBeenCalledWith('like', 'TRANSFER', 33);
-
-    rerender(
-      <AISummary
-        mode="mid-call-initiator"
-        state="content"
-        content={{type: 'text', summaryText: 'Replacement summary'}}
-        contentRevision={34}
-        selectedFeedback="none"
-        actionType="TRANSFER"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={onFeedback}
-      />
-    );
-
-    await act(async () => {
-      feedback.resolve({outcome: 'confirmed'});
-      await feedback.promise;
-    });
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-      'ai-summary__feedback-button--selected'
-    );
-  });
-
-  it('allows only the latest mid-call feedback attempt to paint', async () => {
-    const firstFeedback = createDeferred<{outcome: 'confirmed'}>();
-    const secondFeedback = createDeferred<{outcome: 'confirmed'}>();
-    const onFeedback = jest.fn().mockReturnValueOnce(firstFeedback.promise).mockReturnValueOnce(secondFeedback.promise);
-    render(
-      <AISummary
-        mode="mid-call-initiator"
-        state="content"
-        content={textContent}
-        contentRevision={35}
-        selectedFeedback="none"
-        actionType="TRANSFER"
-        onEdit={jest.fn()}
-        onCopy={jest.fn()}
-        onFeedback={onFeedback}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike}));
-
-    await act(async () => {
-      firstFeedback.resolve({outcome: 'confirmed'});
-      await firstFeedback.promise;
-    });
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).not.toHaveClass(
-      'ai-summary__feedback-button--selected'
-    );
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).not.toHaveClass(
-      'ai-summary__feedback-button--selected'
-    );
-
-    await act(async () => {
-      secondFeedback.resolve({outcome: 'confirmed'});
-      await secondFeedback.promise;
-    });
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike})).toHaveClass(
-      'ai-summary__feedback-button--selected'
-    );
-  });
-
-  it('settles mid-call feedback confirmation after unmount without a window error', async () => {
-    const failures = trackWindowFailures();
-    try {
-      const feedback = createDeferred<{outcome: 'confirmed'}>();
-      const {unmount} = render(
-        <AISummary
-          mode="mid-call-initiator"
-          state="content"
-          content={textContent}
-          contentRevision={36}
-          selectedFeedback="none"
-          actionType="TRANSFER"
-          onEdit={jest.fn()}
-          onCopy={jest.fn()}
-          onFeedback={jest.fn().mockReturnValue(feedback.promise)}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-      unmount();
-      await act(async () => {
-        feedback.resolve({outcome: 'confirmed'});
-        await feedback.promise;
-      });
-      failures.assertNone();
-    } finally {
-      failures.cleanup();
-    }
   });
 
   it('uses synchronous receiver copy text without card JSON or editable content props', async () => {
@@ -1965,7 +1233,6 @@ describe('AISummary', () => {
         mode="mid-call-receiver"
         state="content"
         contentRevision={10}
-        actionType="TRANSFER"
         getReceiverCopyText={getReceiverCopyText}
         onCopy={onCopy}
         onFeedback={jest.fn().mockResolvedValue({outcome: 'confirmed'})}
@@ -1996,7 +1263,6 @@ describe('AISummary', () => {
           mode="mid-call-receiver"
           state="content"
           contentRevision={11}
-          actionType="TRANSFER"
           containingPanelFocusTarget={panelRef}
           getReceiverCopyText={() => 'Visible card text'}
           onCopy={jest.fn().mockReturnValue(true)}
@@ -2024,11 +1290,10 @@ describe('AISummary', () => {
   it('moves focus to a successor when one focused control is removed, then falls back to the panel', async () => {
     const panelRef = React.createRef<HTMLDivElement>();
     const firstContent: AISummaryContent = {
-      type: 'sections',
-      sections: [
-        {key: 'initialContactReason', value: 'Summary value', editable: true},
-        {key: 'nextSteps', value: 'Follow-up value', editable: true},
-      ],
+      sections: {
+        initialContactReason: 'Summary value',
+        nextSteps: 'Follow-up value',
+      },
     };
     const {rerender} = render(
       <div>
@@ -2043,7 +1308,6 @@ describe('AISummary', () => {
           onCopy={jest.fn()}
           onFeedback={jest.fn().mockReturnValue(true)}
           onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
         />
       </div>
     );
@@ -2063,8 +1327,7 @@ describe('AISummary', () => {
           mode="post-call"
           state="content"
           content={{
-            type: 'sections',
-            sections: [{key: 'nextSteps', value: 'Follow-up value', editable: true}],
+            sections: {nextSteps: 'Follow-up value'},
           }}
           contentRevision={52}
           containingPanelFocusTarget={panelRef}
@@ -2072,7 +1335,6 @@ describe('AISummary', () => {
           onCopy={jest.fn()}
           onFeedback={jest.fn().mockReturnValue(true)}
           onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
         />
       </div>
     );
@@ -2098,8 +1360,7 @@ describe('AISummary', () => {
           mode="post-call"
           state="unavailable"
           content={{
-            type: 'sections',
-            sections: [{key: 'nextSteps', value: 'Follow-up value', editable: true}],
+            sections: {nextSteps: 'Follow-up value'},
           }}
           contentRevision={53}
           containingPanelFocusTarget={panelRef}
@@ -2107,7 +1368,6 @@ describe('AISummary', () => {
           onCopy={jest.fn()}
           onFeedback={jest.fn().mockReturnValue(true)}
           onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
         />
       </div>
     );
@@ -2126,7 +1386,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(true)}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -2140,14 +1399,13 @@ describe('AISummary', () => {
       <AISummary
         mode="post-call"
         state="content"
-        content={{type: 'text', summaryText: 'Updated while focus remains on Like.'}}
+        content={{summaryText: 'Updated while focus remains on Like.'}}
         contentRevision={55}
-        selectedFeedback="like"
+        selectedFeedback="thumbs_up"
         onEdit={jest.fn()}
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(true)}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -2165,7 +1423,6 @@ describe('AISummary', () => {
         onCopy={jest.fn()}
         onFeedback={jest.fn().mockReturnValue(true)}
         onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onCopyVisualStateChange={jest.fn()}
       />
     );
 
@@ -2203,7 +1460,6 @@ describe('AISummary', () => {
           onCopy={jest.fn()}
           onFeedback={jest.fn().mockReturnValue(true)}
           onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-          onCopyVisualStateChange={jest.fn()}
         />
         <button type="button">External destination</button>
       </div>
@@ -2247,7 +1503,6 @@ describe('AISummary', () => {
               mode="mid-call-receiver"
               state="content"
               contentRevision={15}
-              actionType="TRANSFER"
               containingPanelFocusTarget={panelRef}
               getReceiverCopyText={() => 'Visible card text'}
               onCopy={jest.fn().mockReturnValue(true)}
@@ -2278,33 +1533,5 @@ describe('AISummary', () => {
     });
 
     expect(external).toHaveFocus();
-  });
-
-  it('keeps Complete Wrap-Up label stable across copy states', async () => {
-    render(
-      <AISummary
-        mode="post-call"
-        state="content"
-        content={textContent}
-        contentRevision={12}
-        onEdit={jest.fn()}
-        onCopy={jest.fn().mockReturnValue(true)}
-        onFeedback={jest.fn().mockReturnValue(true)}
-        onRetry={jest.fn().mockResolvedValue({outcome: 'blocked'})}
-        onComplete={jest.fn()}
-        onCopyVisualStateChange={jest.fn()}
-      />
-    );
-
-    const complete = screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
-    expect(complete).toHaveTextContent(COMPLETE_WRAP_UP_LABEL);
-    expect(complete).toHaveAttribute('title', COMPLETE_WRAP_UP_LABEL);
-    fireEvent.mouseEnter(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    expect(complete).toHaveTextContent(COMPLETE_WRAP_UP_LABEL);
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary}));
-    await waitFor(() =>
-      expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toBeInTheDocument()
-    );
-    expect(complete).toHaveTextContent(COMPLETE_WRAP_UP_LABEL);
   });
 });

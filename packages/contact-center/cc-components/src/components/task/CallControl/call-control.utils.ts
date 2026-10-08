@@ -1,10 +1,5 @@
 import {CallControlMenuType} from '../task.types';
-import type {
-  CallControlButton,
-  MEDIA_CHANNEL as MediaChannelType,
-  MediaTypeInfo,
-  WrapupCompletionResult,
-} from '../task.types';
+import type {CallControlButton, MEDIA_CHANNEL as MediaChannelType, MediaTypeInfo} from '../task.types';
 import type {TaskUIControls} from '@webex/cc-store';
 import {getMediaTypeInfo} from '../../../utils';
 import {DestinationType, ILogger, ITask} from '@webex/cc-store';
@@ -22,32 +17,10 @@ import {
 } from '../constants';
 import {isWxAppEngagedCall} from '../../../utils/wxapp-telephony.utils';
 
-const LEGACY_WRAPUP_SUCCESS: WrapupCompletionResult = {wrapup: 'succeeded', response: 'not-required'};
-const FAILED_WRAPUP: WrapupCompletionResult = {wrapup: 'failed'};
-
 /** SDK P0 keypad control — may exist on main leg before InteractionUIControls ships keypad. */
 type TaskMainControlsWithKeypad = TaskUIControls['main'] & {
   keypad?: {isVisible: boolean; isEnabled: boolean};
 };
-
-const isWrapupCompletionResult = (result: unknown): result is WrapupCompletionResult => {
-  if (!result || typeof result !== 'object' || !('wrapup' in result)) {
-    return false;
-  }
-
-  if (result.wrapup === 'failed') {
-    return true;
-  }
-
-  return (
-    result.wrapup === 'succeeded' &&
-    'response' in result &&
-    (result.response === 'not-required' || result.response === 'submitted' || result.response === 'response-failed')
-  );
-};
-
-const normalizeWrapupCompletionResult = (result: unknown): WrapupCompletionResult =>
-  isWrapupCompletionResult(result) ? result : LEGACY_WRAPUP_SUCCESS;
 
 /**
  * Handles toggle hold functionality
@@ -92,33 +65,24 @@ export const handleMuteToggle = async (
 export const handleWrapupCall = (
   selectedWrapupReason: string | null,
   selectedWrapupId: string | null,
-  wrapupCall: (reason: string, id: string) => Promise<WrapupCompletionResult>,
+  wrapupCall: (reason: string, id: string) => void,
   setSelectedWrapupReason: (reason: string | null) => void,
   setSelectedWrapupId: (id: string | null) => void,
   logger: ILogger
-): Promise<WrapupCompletionResult> => {
+): void => {
   logger.info('CC-Widgets: CallControl: wrap-up submitted', {
     module: 'call-control.tsx',
     method: 'handleWrapupCall',
   });
   if (selectedWrapupReason && selectedWrapupId) {
-    return Promise.resolve()
-      .then(() => wrapupCall(selectedWrapupReason, selectedWrapupId))
-      .then((result) => normalizeWrapupCompletionResult(result))
-      .then((result) => {
-        if (result.wrapup === 'succeeded') {
-          setSelectedWrapupReason(null);
-          setSelectedWrapupId(null);
-          logger.log('CC-Widgets: CallControl: wrapup completed', {
-            module: 'call-control.tsx',
-            method: 'handleWrapupCall',
-          });
-        }
-        return result;
-      })
-      .catch(() => FAILED_WRAPUP);
+    wrapupCall(selectedWrapupReason, selectedWrapupId);
+    setSelectedWrapupReason(null);
+    setSelectedWrapupId(null);
+    logger.log('CC-Widgets: CallControl: wrapup completed', {
+      module: 'call-control.tsx',
+      method: 'handleWrapupCall',
+    });
   }
-  return Promise.resolve(FAILED_WRAPUP);
 };
 
 /**

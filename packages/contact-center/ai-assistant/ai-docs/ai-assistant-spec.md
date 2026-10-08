@@ -11,7 +11,7 @@
 | Doc kind | Module spec |
 | Coverage score | Pending coverage assessment |
 | Generated from | `module-spec` @ SDLC template library `0.1.0-draft` |
-| generated_by / approved_by / updated_at | generated_by `ai-assistant feature work` / approved_by `pending` / updated_at `2026-09-24` |
+| generated_by / approved_by / updated_at | generated_by `ai-assistant feature work` / approved_by `pending` / updated_at `2026-07-29` |
 | Validation status | not-run |
 
 ## Evidence Rules
@@ -32,8 +32,8 @@ behavior), then `src/ai-assistant.types.ts` (public props).
 
 ## Purpose / Responsibility
 Owns: assistant chrome state, the real-time assist request lifecycle, chat transcript assembly from
-store payloads, receiving-agent AI summary projection, and forwarding agent feedback actions to the
-store. Does NOT own: card rendering, panel markup, SDK transport, or the store's event plumbing.
+store payloads, and forwarding agent feedback actions to the SDK. Does NOT own: card rendering, panel
+markup, SDK transport, or the store's `realTimeAssist` event plumbing.
 
 ## Stack
 TypeScript 5.6.3, React (peer `>=18.3.1`) function components + hooks, MobX via `mobx-react-lite`
@@ -93,15 +93,12 @@ packages/contact-center/ai-assistant/
 | `ai-assistant-R-008` | Like / dislike / copy call `sendRealTimeAssistanceUserAction` and return its promise; the card marks the control as selected only after that promise resolves, and a rejection is logged and leaves the control untouched. | The UI must not claim feedback was recorded when it was not. | `src/helper.ts` (`handleRealTimeAssistAction`), `packages/contact-center/cc-components/src/components/AIAssistant/AdaptiveCardRenderer/adaptive-card-renderer.tsx` (`emitUserAction`) | `tests/ai-assistant/feedback.tsx`, `packages/contact-center/cc-components/tests/components/AIAssistant/adaptive-card-renderer.test.tsx` | PRESENT |
 | `ai-assistant-R-009` | When the action cannot be sent (missing `adaptiveCardId`, ids, or SDK method), the reason is logged via `store.logger.warn` and the returned promise rejects. | A silent no-op leaves both agent and support blind. | `src/helper.ts` | `tests/ai-assistant/feedback.tsx` | PRESENT |
 | `ai-assistant-R-010` | A render failure is contained by the widget's `ErrorBoundary` and reported through `store.onErrorCallback('AIAssistant', error)`. | A crashing assistant must not take the agent desktop down. | `src/ai-assistant/index.tsx` | `tests/ai-assistant/index.tsx` | PRESENT |
-| `ai-assistant-R-011` | Receiving-agent summary state is read only from `store.aiSummaries[interactionId].receiver` for the current task, mapped with `getAISummarySurface`, and exposes `recordReceiverSummaryCopied` and `setReceiverSummaryFeedback`; those callbacks pass `currentTask` back to the store, and the package never calls summary SDK methods. Content projections carry the confirmed feedback, the feedback-pending/disabled booleans, and a per-interaction branch key. View summary opens the receiver branch whenever a receiver summary exists. | The AI Assistant panel can host receiver summaries while `@webex/cc-store` remains the sole summary SDK boundary and while real-time assist remains the default branch for ordinary launcher/restore/close and owner changes. | `src/ai-assistant/index.tsx`, `src/ai-assistant.types.ts` | `tests/ai-assistant/index.tsx`, `packages/contact-center/cc-components/tests/components/AIAssistant/ai-assistant.tsx` | PRESENT |
 
 ## Design Overview
 `src/ai-assistant/index.tsx` is a thin `observer` container: it reads the store, derives
 `isFeatureEnabled` from `featureFlags[REAL_TIME_ASSIST_FLAG]` and the active interaction from
-`currentTask.data.interactionId`, reads the receiver summary entry for that interaction from the store, passes
-`currentTask` back on receiver summary copy/feedback callbacks so the store applies them to that entry, and
-hands everything to `useAiAssistant`, whose
-result is spread straight onto `AIAssistantComponent`.
+`currentTask.data.interactionId`, resolves the deprecated callback alias, and hands everything to
+`useAiAssistant`, whose result is spread straight onto `AIAssistantComponent`.
 
 `src/helper.ts` holds two independent hooks composed by `useAiAssistant`:
 
@@ -206,6 +203,21 @@ sequenceDiagram
 views and the ErrorBoundary path. `tests/ai-assistant/feedback.tsx` covers like/dislike/copy dispatch
 and the missing-`adaptiveCardId` warning. UI-level rendering (spinner, error text,
 snapshots) is covered in `cc-components/tests/components/AIAssistant/`.
+
+## Receiving-agent AI summaries
+
+`getReceiverSummary` in `src/helper.ts` reads the current interaction's receiver entry
+from `store.aiSummaries`, maps its surface with `getAISummarySurface`, and passes the
+SDK-shaped content, revision, confirmed feedback and pending state to the presentation
+component. Its copy and feedback callbacks pass the captured Task and displayed
+revision to the store. The widget makes no summary SDK calls.
+
+The receiver branch is independent of Real-time Assist enablement. A missing receiver
+entry supplies no branch; failed or unsupported summaries supply the matching status
+surface. Summary changes are observed by `AIAssistantInternal`.
+
+Evidence: `src/helper.ts`, `src/ai-assistant/index.tsx`;
+tests: receiver summary cases in `tests/ai-assistant/index.tsx`.
 
 ## Traceability
 - Repo architecture: `../../../../ai-docs/ARCHITECTURE.md` · Registry: `../../../../ai-docs/SPEC_INDEX.md`

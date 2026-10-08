@@ -1,10 +1,11 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import store from '@webex/cc-store';
-import type {RealTimeAssistPayload} from '@webex/cc-store';
+import store, {getAISummarySurface} from '@webex/cc-store';
+import type {ITask, RealTimeAssistPayload} from '@webex/cc-store';
 import type {
   AIAssistantActionEvent,
   AIAssistantChatEntry,
   AIAssistantChromeState,
+  AIAssistantReceiverSummary,
   AIAssistantRequestStatus,
 } from '@webex/cc-components';
 import {
@@ -181,7 +182,7 @@ export const useRealTimeAssist = ({
   // Returns the SDK promise so the card only marks like/dislike as selected
   // once the action has actually reached the backend.
   const handleRealTimeAssistAction = useCallback(
-    (event: AIAssistantActionEvent, assist: RealTimeAssistPayload): Promise<void> => {
+    (event: AIAssistantActionEvent, assist: RealTimeAssistPayload) => {
       const api = store.cc?.apiAIAssistant;
       const adaptiveCardId = assist?.data?.adaptiveCardId;
       if (!interactionId || !agentId || !adaptiveCardId || !api?.sendRealTimeAssistanceUserAction) {
@@ -202,7 +203,6 @@ export const useRealTimeAssist = ({
           actionId: event.actionId,
           languageCode: typeof assist?.data?.languageCode === 'string' ? assist.data.languageCode : undefined,
         })
-        .then(() => undefined)
         .catch((error) => {
           store.logger?.error(`CC-Widgets: sendRealTimeAssistanceUserAction failed - ${error}`, {
             module: MODULE,
@@ -278,10 +278,30 @@ export const useAiAssistant = (input: UseAiAssistantInput) => {
   const chrome = useAIAssistantChrome(input);
   const realTimeAssist = useRealTimeAssist(input);
 
-  return useMemo(
-    () => ({...chrome, ...realTimeAssist, receiverSummary: input.receiverSummary}),
-    [chrome, input.receiverSummary, realTimeAssist]
-  );
+  return useMemo(() => ({...chrome, ...realTimeAssist}), [chrome, realTimeAssist]);
+};
+
+/** The receiving agent's consult/transfer summary, pushed by the backend for the task's interaction. */
+export const getReceiverSummary = (task?: ITask): AIAssistantReceiverSummary | undefined => {
+  const interactionId = task?.data?.interactionId;
+  const entry = interactionId ? store.aiSummaries?.[interactionId]?.receiver : undefined;
+  const surface = getAISummarySurface(entry);
+  const branchKey = `mid-call:receiver:${interactionId}`;
+  if (surface === 'content' && entry.content.adaptiveCard) {
+    return {
+      surface,
+      branchKey,
+      content: entry.content,
+      contentRevision: entry.revision,
+      selectedFeedback: entry.feedback,
+      feedbackPending: Boolean(entry.feedbackPending),
+      recordReceiverSummaryCopied: (expectedRevision) =>
+        store.recordAISummaryCopied('receiver', expectedRevision, task),
+      setReceiverSummaryFeedback: (feedback, expectedRevision) =>
+        void store.setReceiverSummaryFeedback(feedback, expectedRevision, task),
+    };
+  }
+  return surface === 'unavailable' || surface === 'generic-error' ? {surface, branchKey} : undefined;
 };
 
 export {REAL_TIME_ASSIST_FLAG};

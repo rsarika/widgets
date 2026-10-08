@@ -878,7 +878,7 @@ describe('CallControlCADComponent', () => {
       const screen = render(
         <CallControlCADComponent
           {...defaultProps}
-          currentTask={consultTask as unknown as typeof defaultProps.currentTask}
+          currentTask={consultTask}
           controls={createEnabledMainTaskUIControls({exitConference: {isVisible: true, isEnabled: true}})}
           conferenceParticipants={[
             {id: 'agent-2', name: 'Agent Two', pType: 'Agent'},

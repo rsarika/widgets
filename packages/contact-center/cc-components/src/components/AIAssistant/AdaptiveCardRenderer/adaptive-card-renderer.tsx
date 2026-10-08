@@ -9,7 +9,6 @@ import {
   copySuggestion,
   detectActionKind,
   extractCardText,
-  hasRenderableCardContent,
   preloadIcons,
   prepareCardForRender,
   toggleActionControls,
@@ -102,12 +101,7 @@ const AdaptiveCardRendererBody: React.FC<AdaptiveCardRendererProps> = ({
         }
         onActionRef.current?.(action);
       };
-      const preparedCard = prepareCardForRender(card, publishTimestamp, assistantTitle);
-      if (!hasRenderableCardContent(preparedCard)) {
-        showBoundary(new Error('Adaptive card has no renderable content after sanitization.'));
-        return undefined;
-      }
-      adaptiveCard.parse(preparedCard);
+      adaptiveCard.parse(prepareCardForRender(card, publishTimestamp, assistantTitle));
       const rendered = adaptiveCard.render();
       if (rendered) {
         container.appendChild(rendered);
@@ -147,6 +141,7 @@ const AdaptiveCardRendererBody: React.FC<AdaptiveCardRendererProps> = ({
 
 const AdaptiveCardRenderer: React.FC<AdaptiveCardRendererProps> = ({
   card,
+  contentRevision,
   assistantTitle,
   fallbackText,
   publishTimestamp,
@@ -164,7 +159,7 @@ const AdaptiveCardRenderer: React.FC<AdaptiveCardRendererProps> = ({
     >
       <ErrorBoundary
         fallbackRender={() => <AdaptiveCardFallback fallbackText={fallbackText} />}
-        resetKeys={[card, assistantTitle, publishTimestamp]}
+        resetKeys={contentRevision === undefined ? undefined : [contentRevision]}
       >
         <AdaptiveCardRendererBody
           card={card}

@@ -27,7 +27,7 @@ class MockWorker {
     // Simulate worker timer behavior
     if (this.onmessage) {
       setTimeout(() => {
-        this.onmessage?.({data: msg} as MessageEvent);
+        this.onmessage!({data: msg} as MessageEvent);
       }, 0);
     }
   }

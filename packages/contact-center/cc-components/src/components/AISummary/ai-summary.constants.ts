@@ -1,15 +1,3 @@
-import type {AISummaryPostCallDisplaySectionKey, AISummarySectionKey} from '@webex/cc-store';
-
-const assertUniquePostCallDisplaySectionOrder = (order: readonly AISummaryPostCallDisplaySectionKey[]): void => {
-  if (new Set(order).size !== order.length) {
-    throw new Error(
-      'POST_CALL_DISPLAY_SECTION_ORDER must include each AISummaryPostCallDisplaySectionKey exactly once.'
-    );
-  }
-};
-
-export const COPIED_FEEDBACK_MS = 1500;
-
 export const AI_SUMMARY_MESSAGES = {
   viewSummary: 'View summary',
   generatingTitle: 'Generating summary...',
@@ -24,8 +12,6 @@ export const AI_SUMMARY_MESSAGES = {
   plainSummary: 'Summary',
   like: 'This is helpful',
   dislike: "This isn't helpful",
-  likeDisplay: 'Like',
-  dislikeDisplay: 'Dislike',
   retry: 'Retry',
   editSectionLabel: (label: string) => `Edit ${label}`,
   sectionLabels: {
@@ -45,7 +31,6 @@ export const AI_SUMMARY_MESSAGES = {
     searchDestinations: 'Search destinations',
   },
   postCall: {
-    eyebrow: 'Wrap up interaction',
     summaryHeading: 'Summary of your conversation',
     searchPlaceholder: 'Search topic',
     completeAction: 'Complete Wrap-Up',
@@ -59,39 +44,13 @@ export const AI_SUMMARY_MESSAGES = {
   },
 } as const;
 
-export const MID_CALL_SECTION_DEFINITIONS = [
-  {key: 'reasonForTransferOrConsult', label: AI_SUMMARY_MESSAGES.sectionLabels.reasonForTransferOrConsult},
-  {key: 'additionalContext', label: AI_SUMMARY_MESSAGES.sectionLabels.additionalContext},
-  {key: 'keyActionsTaken', label: AI_SUMMARY_MESSAGES.sectionLabels.keyActionsTaken},
-] as const satisfies readonly {key: AISummarySectionKey; label: string}[];
-
-export const POST_CALL_SECTION_DEFINITIONS = [
-  {key: 'initialContactReason', label: AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason},
-  {key: 'additionalContactReasons', label: AI_SUMMARY_MESSAGES.sectionLabels.additionalContactReasons},
-  {key: 'additionalContext', label: AI_SUMMARY_MESSAGES.sectionLabels.additionalContext},
-  {key: 'keyActionsTaken', label: AI_SUMMARY_MESSAGES.sectionLabels.keyActionsTaken},
-  {key: 'nextSteps', label: AI_SUMMARY_MESSAGES.sectionLabels.nextSteps},
-] as const satisfies readonly {key: AISummarySectionKey; label: string}[];
-
-export const POST_CALL_DISPLAY_SECTION_ORDER = [
+/** Display order of summary sections; the store keeps only the sections each summary renders. */
+export const AI_SUMMARY_SECTION_ORDER = [
+  'reasonForTransferOrConsult',
   'initialContactReason',
   'additionalContactReasons',
   'additionalContext',
   'keyActionsTaken',
   'resolution',
   'nextSteps',
-] as const satisfies readonly AISummaryPostCallDisplaySectionKey[];
-
-type MissingPostCallDisplaySectionKeys = Exclude<
-  AISummaryPostCallDisplaySectionKey,
-  (typeof POST_CALL_DISPLAY_SECTION_ORDER)[number]
->;
-
-const assertCompletePostCallDisplaySectionOrder = (
-  missingKeys: Record<MissingPostCallDisplaySectionKeys, never>
-): void => {
-  void missingKeys;
-};
-
-assertCompletePostCallDisplaySectionOrder({});
-assertUniquePostCallDisplaySectionOrder(POST_CALL_DISPLAY_SECTION_ORDER);
+] as const satisfies readonly (keyof typeof AI_SUMMARY_MESSAGES.sectionLabels)[];

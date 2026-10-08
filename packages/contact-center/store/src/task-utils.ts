@@ -26,8 +26,12 @@ export const isIncomingTask = (task: ITask, agentId: string): boolean => {
   );
 };
 
-export const isTelephonyTask = (task: ITask | null | undefined): boolean =>
-  task?.data?.interaction?.mediaType === MEDIA_TYPE_TELEPHONY_LOWER;
+/** Whether the SDK reports this AI summary kind as enabled for a telephony task. */
+export const isAISummaryEnabled = (
+  task: ITask | null | undefined,
+  kind: 'midCallEnabled' | 'postCallEnabled'
+): boolean =>
+  task?.data?.interaction?.mediaType === MEDIA_TYPE_TELEPHONY_LOWER && Boolean(task?.aiSummaryCapabilities?.[kind]);
 
 /**
  * Checks if the current agent is a secondary agent in a consultation scenario.
@@ -618,7 +622,7 @@ export const findMediaResourceId = (task: ITask, mType: string) => {
   }
 
   if (matchingMedia.length === 1) {
-    return matchingMedia[0].mediaResourceId || '';
+    return matchingMedia[0].mediaResourceId;
   }
 
   // In some consult flows, stale consult legs are retained in media. Prefer the

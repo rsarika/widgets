@@ -49,7 +49,6 @@ exports[`ConsultTransferListComponent Snapshots Interactions should render compo
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper md-focus-ring-wrapper children"
         data-color="join"
         data-disabled="false"
@@ -120,7 +119,6 @@ exports[`ConsultTransferListComponent Snapshots Interactions should render compo
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -191,7 +189,6 @@ exports[`ConsultTransferListComponent Snapshots Interactions should render compo
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -262,7 +259,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -333,7 +329,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -404,7 +399,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -475,7 +469,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select Alexander Benjamin Christopher"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -546,7 +539,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -617,7 +609,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -688,7 +679,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John O'Connor & Jane"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -759,7 +749,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -823,7 +812,6 @@ exports[`ConsultTransferListComponent Snapshots Rendering - Tests for UI element
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -894,7 +882,6 @@ exports[`ConsultTransferListComponent Snapshots State Management should update w
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -965,7 +952,6 @@ exports[`ConsultTransferListComponent Snapshots State Management should update w
       class="hover-button"
     >
       <button
-        aria-label="Select John Doe"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"
@@ -1036,7 +1022,6 @@ exports[`ConsultTransferListComponent Snapshots State Management should update w
       class="hover-button"
     >
       <button
-        aria-label="Select Jane Smith"
         class="md-button-circle-wrapper md-button-simple-wrapper"
         data-color="join"
         data-disabled="false"

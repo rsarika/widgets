@@ -1,98 +1,45 @@
-import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {Icon} from '@momentum-design/components/dist/react';
-import type {
-  AISummaryContent,
-  AISummaryDisplaySection,
-  AISummaryDisplaySectionKey,
-  AISummaryEditableField,
-  AISummaryFeedback,
-  AISummarySectionKey,
-} from '@webex/cc-store';
-import {
-  AI_SUMMARY_MESSAGES,
-  COPIED_FEEDBACK_MS,
-  MID_CALL_SECTION_DEFINITIONS,
-  POST_CALL_DISPLAY_SECTION_ORDER,
-  POST_CALL_SECTION_DEFINITIONS,
-} from './ai-summary.constants';
-import type {
-  AISummaryCopyVisualState,
-  AISummaryEditorProps,
-  AISummaryProps,
-  AISummarySectionEditorProps,
-} from './ai-summary.types';
+import type {AISummaryEntry, AISummaryFeedback} from '@webex/cc-store';
+import {AI_SUMMARY_MESSAGES, AI_SUMMARY_SECTION_ORDER} from './ai-summary.constants';
+import {COPIED_FEEDBACK_MS} from '../AIAssistant/constants';
+import type {AISummaryEditorProps, AISummaryProps} from './ai-summary.types';
 import './ai-summary.styles.scss';
 
-type AISummaryTooltipControl = 'copy' | 'like' | 'dislike';
+type DisplaySection = {key: (typeof AI_SUMMARY_SECTION_ORDER)[number]; value: string};
+
+const FEEDBACK_BUTTONS = [
+  {feedback: 'thumbs_up', icon: 'like', label: AI_SUMMARY_MESSAGES.like},
+  {feedback: 'thumbs_down', icon: 'dislike', label: AI_SUMMARY_MESSAGES.dislike},
+] as const;
+
+type AISummaryTooltipControl = 'copy' | Exclude<AISummaryFeedback, 'none'>;
 
 const useReactId = (React as typeof React & {useId: () => string}).useId;
 
-const postCallOrdinal = new Map<AISummaryDisplaySectionKey, number>(
-  POST_CALL_DISPLAY_SECTION_ORDER.map((key, index) => [key, index])
-);
-
-const BULLETED_SECTION_KEYS = new Set<AISummaryDisplaySectionKey>([
+const BULLETED_SECTION_KEYS = new Set<DisplaySection['key']>([
   'additionalContactReasons',
   'keyActionsTaken',
   'nextSteps',
 ]);
 
-const isSelectableFeedback = (value: AISummaryFeedback): value is Exclude<AISummaryFeedback, 'none'> =>
-  value === 'like' || value === 'dislike';
+/** The summary's sections in display order, with the read-only post-call resolution among them. */
+export const getDisplaySections = (content: NonNullable<AISummaryEntry['content']>): DisplaySection[] =>
+  AI_SUMMARY_SECTION_ORDER.flatMap((key): DisplaySection[] => {
+    if (key === 'resolution') {
+      return content.resolution?.trim() ? [{key, value: content.resolution}] : [];
+    }
+    const value = content.sections?.[key];
+    return value === undefined ? [] : [{key, value}];
+  });
 
-const isConfirmedFeedbackResult = (result: unknown): boolean =>
-  typeof result === 'object' && result !== null && (result as {outcome?: unknown}).outcome === 'confirmed';
-
-const settleCallbackResult = (result: unknown, onFulfilled: (value: unknown) => void): void => {
-  void Promise.resolve(result)
-    .then(onFulfilled)
-    .catch(() => undefined);
-};
-
-const getSectionOrdinal = (key: AISummaryDisplaySectionKey): number =>
-  postCallOrdinal.get(key) ?? Number.MAX_SAFE_INTEGER;
-
-const SECTION_LABELS = new Map<AISummaryDisplaySectionKey, string>([
-  ...MID_CALL_SECTION_DEFINITIONS.map((definition) => [definition.key, definition.label] as const),
-  ...POST_CALL_SECTION_DEFINITIONS.map((definition) => [definition.key, definition.label] as const),
-  ['resolution', AI_SUMMARY_MESSAGES.sectionLabels.resolution],
-]);
-
-const getAISummarySectionLabel = (section: Pick<AISummaryDisplaySection, 'key'>): string =>
-  SECTION_LABELS.get(section.key) ?? section.key;
-
-export const projectPostCallDisplaySections = (content: AISummaryContent): AISummaryDisplaySection[] => {
-  if (content.type !== 'sections') {
-    return [];
+const flattenContentForCopy = (content: NonNullable<AISummaryEntry['content']>): string => {
+  if (!content.sections) {
+    return content.summaryText ?? '';
   }
-  const sections = [...content.sections];
-  const resolution = content.resolution;
-  if (typeof resolution !== 'string' || resolution.trim().length === 0) {
-    return sections;
-  }
-  const outcome: AISummaryDisplaySection = {
-    key: 'resolution',
-    value: resolution,
-    editable: false,
-  };
-  const outcomeOrdinal = getSectionOrdinal('resolution');
-  const insertionIndex = sections.findIndex((section) => getSectionOrdinal(section.key) > outcomeOrdinal);
-  if (insertionIndex < 0) {
-    return [...sections, outcome];
-  }
-  return [...sections.slice(0, insertionIndex), outcome, ...sections.slice(insertionIndex)];
-};
-
-const flattenContentForCopy = (content: AISummaryContent): string => {
-  if (content.type === 'text') {
-    return content.summaryText;
-  }
-  if (content.type === 'card') {
-    return '';
-  }
-  return projectPostCallDisplaySections(content)
+  return getDisplaySections(content)
     .filter((section) => section.value.trim().length > 0)
-    .map((section) => `${getAISummarySectionLabel(section)}: ${section.value}`)
+    .map((section) => `${AI_SUMMARY_MESSAGES.sectionLabels[section.key]}: ${section.value}`)
     .join('\n\n');
 };
 
@@ -100,7 +47,7 @@ const splitDisplayLines = (value: string): string[] => value.split('\n').filter(
 
 const stripBulletMarker = (line: string): string => line.trim().replace(/^(?:\u2022|[-*])\s*/, '');
 
-const renderReadonlyValue = (section: AISummaryDisplaySection, inline = false) => {
+const renderReadonlyValue = (section: DisplaySection, inline = false) => {
   const lines = splitDisplayLines(section.value);
   if (BULLETED_SECTION_KEYS.has(section.key) && lines.length > 1) {
     const List = inline ? 'span' : 'ul';
@@ -168,14 +115,19 @@ const getEnabledControls = (root: HTMLElement): HTMLElement[] =>
 
 // Display the structured document compactly; activate the original keyed native
 // editor on click/keyboard activation. SDK values remain plain text and unchanged.
-const SummarySectionEditor: React.FC<AISummarySectionEditorProps> = ({section, disabled, onChange, onEditorBlur}) => {
+const SummarySectionEditor: React.FC<{
+  section: DisplaySection;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onEditorBlur: () => void;
+}> = ({section, disabled, onChange, onEditorBlur}) => {
   const [editing, setEditing] = useState(false);
-  const sectionLabel = getAISummarySectionLabel(section);
+  const label = AI_SUMMARY_MESSAGES.sectionLabels[section.key];
   if (editing && !disabled) {
     return (
       <label className="ai-summary__section ai-summary__section--structured">
         <span className="ai-summary__label" dir="auto">
-          {sectionLabel}
+          {label}
         </span>
         <SummaryEditor
           className="ai-summary__textarea"
@@ -195,13 +147,13 @@ const SummarySectionEditor: React.FC<AISummarySectionEditorProps> = ({section, d
     <button
       type="button"
       className="ai-summary__section-preview"
-      aria-label={AI_SUMMARY_MESSAGES.editSectionLabel(sectionLabel)}
+      aria-label={AI_SUMMARY_MESSAGES.editSectionLabel(label)}
       aria-description={section.value}
       disabled={disabled}
       onClick={() => setEditing(true)}
     >
       <span className="ai-summary__label" dir="auto">
-        {sectionLabel}:
+        {label}:
       </span>{' '}
       {renderReadonlyValue(section, true)}
     </button>
@@ -212,54 +164,14 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
   const rootRef = useRef<HTMLDivElement>(null);
   const focusedControlRef = useRef<HTMLElement | null>(null);
   const successorRef = useRef<HTMLElement | null>(null);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(false);
-  const copyAttemptRef = useRef(0);
-  const feedbackAttemptRef = useRef(0);
-  const contentRevisionRef = useRef<number | undefined>(undefined);
-  const resetRevisionRef = useRef<number | undefined>(undefined);
-  const resetRevisionInitializedRef = useRef(false);
-  const [copyVisualState, setCopyVisualState] = useState<AISummaryCopyVisualState>('idle');
-  const copyVisualStateRef = useRef<AISummaryCopyVisualState>('idle');
+  const [copied, setCopied] = useState(false);
   const [hoveredTooltip, setHoveredTooltip] = useState<AISummaryTooltipControl | null>(null);
-  const [localFeedback, setLocalFeedback] = useState<AISummaryFeedback>(props.selectedFeedback ?? 'none');
   const [, scheduleFocusRestoration] = useState(0);
   const feedbackDescriptionId = `ai-summary-feedback-${useReactId()}`;
 
   const contentRevision = 'contentRevision' in props ? props.contentRevision : undefined;
-  contentRevisionRef.current = contentRevision;
-  copyVisualStateRef.current = copyVisualState;
   const disabled = Boolean(props.controlsDisabled || props.requestPending);
-  const feedbackStatus = props.mode === 'post-call' ? props.feedbackStatus : undefined;
-
-  const setCopyState = (state: AISummaryCopyVisualState) => {
-    copyVisualStateRef.current = state;
-    setCopyVisualState(state);
-    if (props.mode === 'post-call') {
-      props.onCopyVisualStateChange(state);
-    }
-  };
-
-  const clearCopiedTimer = () => {
-    if (copiedTimerRef.current) {
-      clearTimeout(copiedTimerRef.current);
-      copiedTimerRef.current = null;
-    }
-  };
-
-  const resetCopiedState = () => {
-    clearCopiedTimer();
-    if (copyVisualStateRef.current === 'idle') {
-      return;
-    }
-    setCopyState('idle');
-  };
-
-  const isCurrentCopyAttempt = (attempt: number, revision: number): boolean =>
-    mountedRef.current && copyAttemptRef.current === attempt && contentRevisionRef.current === revision;
-
-  const isCurrentFeedbackAttempt = (attempt: number, revision: number): boolean =>
-    mountedRef.current && feedbackAttemptRef.current === attempt && contentRevisionRef.current === revision;
+  const selectedFeedback = props.selectedFeedback ?? 'none';
 
   const clearFocusSnapshot = () => {
     focusedControlRef.current = null;
@@ -270,9 +182,18 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     scheduleFocusRestoration((revision) => revision + 1);
   };
 
+  // A new summary starts without the previous copy confirmation.
   useEffect(() => {
-    setLocalFeedback(props.selectedFeedback ?? 'none');
-  }, [props.selectedFeedback, contentRevision]);
+    setCopied(false);
+  }, [contentRevision]);
+
+  useEffect(() => {
+    if (!copied) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   useEffect(() => {
     if (hoveredTooltip === null) {
@@ -290,31 +211,6 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     document.addEventListener('keydown', dismissTooltip, true);
     return () => document.removeEventListener('keydown', dismissTooltip, true);
   }, [hoveredTooltip]);
-
-  useLayoutEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      copyAttemptRef.current += 1;
-      feedbackAttemptRef.current += 1;
-      clearCopiedTimer();
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!resetRevisionInitializedRef.current) {
-      resetRevisionInitializedRef.current = true;
-      resetRevisionRef.current = contentRevision;
-      return;
-    }
-    if (resetRevisionRef.current === contentRevision) {
-      return;
-    }
-    resetRevisionRef.current = contentRevision;
-    copyAttemptRef.current += 1;
-    feedbackAttemptRef.current += 1;
-    resetCopiedState();
-  }, [contentRevision]);
 
   useLayoutEffect(() => {
     const focused = focusedControlRef.current;
@@ -336,13 +232,6 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     clearFocusSnapshot();
   });
 
-  const renderedSections = useMemo(() => {
-    if (!('content' in props) || !props.content || props.content.type !== 'sections') {
-      return [];
-    }
-    return props.mode === 'post-call' ? projectPostCallDisplaySections(props.content) : props.content.sections;
-  }, [props]);
-
   const copyText = () => {
     if (props.mode === 'mid-call-receiver' && props.state === 'content') {
       return props.getReceiverCopyText();
@@ -351,15 +240,6 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
       return '';
     }
     return flattenContentForCopy(props.content);
-  };
-
-  const getCopyTextForClipboard = (): string | undefined => {
-    try {
-      const text = copyText();
-      return text.trim().length === 0 ? undefined : text;
-    } catch {
-      return undefined;
-    }
   };
 
   const handleFocusCapture = (event: React.FocusEvent<HTMLDivElement>) => {
@@ -388,109 +268,36 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (disabled || contentRevision === undefined) {
       return;
     }
-    const text = getCopyTextForClipboard();
-    if (text === undefined) {
-      return;
-    }
-    let writeResult: unknown;
+    setHoveredTooltip(null);
+    setCopied(false);
     try {
-      const clipboard = navigator.clipboard;
-      if (!clipboard?.writeText) {
+      const text = copyText();
+      if (text.trim().length === 0) {
         return;
       }
-      writeResult = clipboard.writeText(text);
+      await navigator.clipboard.writeText(text);
     } catch {
+      // Without copy text or clipboard access, the button shows no confirmation.
       return;
     }
-    const copyRevision = contentRevision;
-    const copyAttempt = copyAttemptRef.current + 1;
-    copyAttemptRef.current = copyAttempt;
-    setHoveredTooltip(null);
-    resetCopiedState();
-    Promise.resolve(writeResult).then(
-      () => {
-        if (!isCurrentCopyAttempt(copyAttempt, copyRevision)) {
-          return;
-        }
-        let accepted = false;
-        try {
-          accepted = props.onCopy(copyRevision);
-        } catch {
-          accepted = false;
-        }
-        if (!accepted || !isCurrentCopyAttempt(copyAttempt, copyRevision)) {
-          return;
-        }
-        setCopyState('confirmed');
-        clearCopiedTimer();
-        copiedTimerRef.current = setTimeout(() => {
-          if (!isCurrentCopyAttempt(copyAttempt, copyRevision)) {
-            return;
-          }
-          copiedTimerRef.current = null;
-          resetCopiedState();
-        }, COPIED_FEEDBACK_MS);
-      },
-      () => undefined
-    );
+    // The store rejects the copy when a newer summary replaced this one meanwhile.
+    setCopied(props.onCopy(contentRevision));
   };
 
   const handleFeedback = (feedback: Exclude<AISummaryFeedback, 'none'>) => {
-    if (disabled || contentRevision === undefined) {
-      return;
+    if (!disabled && contentRevision !== undefined) {
+      props.onFeedback?.(feedback, contentRevision);
     }
-    const feedbackRevision = contentRevision;
-    const feedbackAttempt = feedbackAttemptRef.current + 1;
-    feedbackAttemptRef.current = feedbackAttempt;
-    if (props.mode === 'post-call') {
-      let accepted: unknown;
-      try {
-        accepted = props.onFeedback(feedback, feedbackRevision);
-      } catch {
-        return;
-      }
-      if (accepted === true) {
-        setLocalFeedback(feedback);
-        return;
-      }
-      settleCallbackResult(accepted, (settledAccepted) => {
-        if (settledAccepted === true && isCurrentFeedbackAttempt(feedbackAttempt, feedbackRevision)) {
-          setLocalFeedback(feedback);
-        }
-      });
-      return;
-    }
-    if (props.mode === 'mid-call-receiver' && props.state !== 'content') {
-      return;
-    }
-    let feedbackResult: unknown;
-    try {
-      feedbackResult = props.onFeedback(feedback, props.actionType, feedbackRevision);
-    } catch {
-      return;
-    }
-    settleCallbackResult(feedbackResult, (result) => {
-      if (isCurrentFeedbackAttempt(feedbackAttempt, feedbackRevision) && isConfirmedFeedbackResult(result)) {
-        setLocalFeedback(feedback);
-      }
-    });
   };
 
   const handleRetry = () => {
-    if (props.mode !== 'post-call' || disabled) {
-      return;
+    if (props.mode === 'post-call' && !disabled) {
+      void props.onRetry();
     }
-    let retryResult: unknown;
-    try {
-      retryResult = props.onRetry();
-    } catch {
-      return;
-    }
-    settleCallbackResult(retryResult, () => undefined);
   };
 
   const renderStatus = () => {
@@ -536,7 +343,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     if (props.state !== 'content' || props.mode === 'mid-call-receiver') {
       return null;
     }
-    if (props.content.type === 'text') {
+    if (!props.content.sections) {
       return (
         <div className="ai-summary__content" data-testid="ai-summary:content">
           <label className="ai-summary__section">
@@ -544,14 +351,9 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
             <SummaryEditor
               className="ai-summary__textarea"
               dir="auto"
-              value={props.content.summaryText}
+              value={props.content.summaryText ?? ''}
               disabled={disabled}
-              onChange={(event) =>
-                props.onEdit(
-                  {key: 'summaryText', value: event.currentTarget.value} satisfies AISummaryEditableField,
-                  props.contentRevision
-                )
-              }
+              onChange={(event) => props.onEdit('summaryText', event.currentTarget.value, props.contentRevision)}
             />
           </label>
         </div>
@@ -559,38 +361,40 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     }
     return (
       <div className="ai-summary__content" data-testid="ai-summary:content">
-        {renderedSections.map((section) =>
-          section.editable ? (
+        {getDisplaySections(props.content).map((section) => {
+          const {key} = section;
+          return key !== 'resolution' ? (
             <SummarySectionEditor
-              key={section.key}
+              key={key}
               section={section}
               disabled={disabled}
-              onChange={(value) =>
-                props.onEdit({key: section.key as AISummarySectionKey, value}, props.contentRevision)
-              }
+              onChange={(value) => props.onEdit(key, value, props.contentRevision)}
               onEditorBlur={handleLocalControlRemoval}
             />
           ) : (
             <div className="ai-summary__section ai-summary__section--structured" key={section.key}>
               <div className="ai-summary__readonly">
                 <span className="ai-summary__label" dir="auto">
-                  {getAISummarySectionLabel(section)}
+                  {AI_SUMMARY_MESSAGES.sectionLabels[section.key]}
                 </span>
                 {renderReadonlyValue(section)}
               </div>
             </div>
-          )
-        )}
+          );
+        })}
       </div>
     );
   };
 
-  const feedbackDescription = feedbackStatus === 'pending' ? AI_SUMMARY_MESSAGES.feedback.pendingSubmission : undefined;
+  // Post-call feedback is only submitted with the final response after wrap-up.
+  const feedbackDescription =
+    props.mode === 'post-call' && selectedFeedback !== 'none'
+      ? AI_SUMMARY_MESSAGES.feedback.pendingSubmission
+      : undefined;
 
   const showActions = props.state === 'content';
   const showSummaryHeading = props.mode === 'post-call' && props.state === 'content';
-  const copyLabel =
-    copyVisualState === 'confirmed' ? AI_SUMMARY_MESSAGES.copiedSummary : AI_SUMMARY_MESSAGES.copySummary;
+  const copyLabel = copied ? AI_SUMMARY_MESSAGES.copiedSummary : AI_SUMMARY_MESSAGES.copySummary;
   const renderTooltip = (control: AISummaryTooltipControl, label: string) =>
     hoveredTooltip === control ? (
       <span className="ai-summary__tooltip" role="tooltip">
@@ -601,28 +405,11 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     ['ai-summary__action', hoveredTooltip === control ? 'ai-summary__action--tooltip-open' : undefined, extraClassName]
       .filter(Boolean)
       .join(' ');
-  const handleCopyActionMouseEnter = () => {
-    // Confirmation changes the button width and can retrigger pointer entry.
-    // Hover must not erase a successful copy.
-    if (disabled || copyVisualState === 'confirmed') {
-      return;
+  const handleActionMouseEnter = (control: AISummaryTooltipControl) => {
+    // Confirmation changes the copy button width and can retrigger pointer entry.
+    if (!disabled && !(control === 'copy' && copied)) {
+      setHoveredTooltip(control);
     }
-    setCopyState('hover');
-    setHoveredTooltip('copy');
-  };
-  const handleCopyActionMouseLeave = () => {
-    if (copyVisualState === 'hover') {
-      setCopyState('idle');
-    }
-    if (hoveredTooltip === 'copy') {
-      setHoveredTooltip(null);
-    }
-  };
-  const handleFeedbackActionMouseEnter = (feedback: Exclude<AISummaryTooltipControl, 'copy'>) => {
-    if (disabled) {
-      return;
-    }
-    setHoveredTooltip(feedback);
   };
   const handleActionMouseLeave = (control: AISummaryTooltipControl) => {
     if (hoveredTooltip === control) {
@@ -652,26 +439,24 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
           <div className="ai-summary__actions" data-testid="ai-summary:actions">
             <span
               className={getActionClassName('copy')}
-              onMouseEnter={handleCopyActionMouseEnter}
-              onMouseLeave={handleCopyActionMouseLeave}
+              onMouseEnter={() => handleActionMouseEnter('copy')}
+              onMouseLeave={() => handleActionMouseLeave('copy')}
             >
               <button
                 className={`ai-summary__button ai-summary__copy-button${
-                  copyVisualState === 'confirmed' ? ' ai-summary__copy-button--confirmed' : ''
+                  copied ? ' ai-summary__copy-button--confirmed' : ''
                 }`}
                 type="button"
                 disabled={disabled}
                 onFocus={() => setHoveredTooltip('copy')}
                 onBlur={() => {
                   setHoveredTooltip(null);
-                  if (copyVisualState === 'confirmed') {
-                    resetCopiedState();
-                  }
+                  setCopied(false);
                 }}
-                onClick={handleCopy}
+                onClick={() => void handleCopy()}
                 aria-label={AI_SUMMARY_MESSAGES.copySummary}
               >
-                <Icon name={copyVisualState === 'confirmed' ? 'check-bold' : 'copy-regular'} aria-hidden="true" />
+                <Icon name={copied ? 'check-bold' : 'copy-regular'} aria-hidden="true" />
                 <span className="ai-summary__sr-only">{copyLabel}</span>
               </button>
               {renderTooltip('copy', AI_SUMMARY_MESSAGES.copySummary)}
@@ -684,15 +469,14 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
               </>
             ) : null}
             <span className="ai-summary__feedback-group">
-              {(['like', 'dislike'] as const).map((feedback) => {
-                const feedbackLabel = feedback === 'like' ? AI_SUMMARY_MESSAGES.like : AI_SUMMARY_MESSAGES.dislike;
-                const selected = isSelectableFeedback(localFeedback) && localFeedback === feedback;
+              {FEEDBACK_BUTTONS.map(({feedback, icon, label: feedbackLabel}) => {
+                const selected = selectedFeedback === feedback;
 
                 return (
                   <span
                     className={getActionClassName(feedback, 'ai-summary__feedback-action')}
                     key={feedback}
-                    onMouseEnter={() => handleFeedbackActionMouseEnter(feedback)}
+                    onMouseEnter={() => handleActionMouseEnter(feedback)}
                     onMouseLeave={() => handleActionMouseLeave(feedback)}
                   >
                     <button
@@ -708,7 +492,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
                       aria-pressed={selected}
                       aria-describedby={feedbackDescription ? feedbackDescriptionId : undefined}
                     >
-                      <Icon name={`${feedback}-${selected ? 'filled' : 'regular'}`} aria-hidden="true" />
+                      <Icon name={`${icon}-${selected ? 'filled' : 'regular'}`} aria-hidden="true" />
                     </button>
                     {renderTooltip(feedback, feedbackLabel)}
                   </span>
@@ -722,20 +506,6 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
         <p className="ai-summary__feedback-status" id={feedbackDescriptionId}>
           {feedbackDescription}
         </p>
-      ) : null}
-      {props.mode === 'post-call' && props.onComplete ? (
-        <div className="ai-summary__primary">
-          <button
-            className="ai-summary__button"
-            type="button"
-            disabled={disabled}
-            onClick={props.onComplete}
-            aria-label={AI_SUMMARY_MESSAGES.postCall.completeAction}
-            title={AI_SUMMARY_MESSAGES.postCall.completeAction}
-          >
-            {AI_SUMMARY_MESSAGES.postCall.completeAction}
-          </button>
-        </div>
       ) : null}
     </section>
   );

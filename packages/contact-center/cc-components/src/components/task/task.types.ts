@@ -1,5 +1,5 @@
 import {
-  AISummaryActionType,
+  AISummaryAction,
   ILogger,
   ITask,
   IContactCenter,
@@ -16,11 +16,10 @@ import {
   AddressBookEntrySearchParams,
   AddressBookEntriesResponse,
   TaskUIControls,
-  PostCallSubmissionResult,
+  type getAISummarySurface,
 } from '@webex/cc-store';
 import {CampaignErrorType} from './CampaignErrorDialog/campaign-error-dialog.types';
-import type {ConsultTransferSummaryView} from './CallControl/CallControlCustom/consult-transfer-summary.types';
-import type {WrapUpSummaryView} from './CallControl/CallControlCustom/wrap-up-summary.types';
+import type {AISummaryMidCallInitiatorProps, AISummaryPostCallProps} from '../AISummary/ai-summary.types';
 
 type Enum<T extends Record<string, unknown>> = T[keyof T];
 
@@ -64,13 +63,40 @@ export type ParticipantDropAnnouncement = {
   message: string;
 };
 
-export type WrapupCompletionResult = PostCallSubmissionResult;
+type AISummaryViewProps =
+  | 'content'
+  | 'contentRevision'
+  | 'selectedFeedback'
+  | 'requestPending'
+  | 'onEdit'
+  | 'onCopy'
+  | 'onFeedback';
+
+/** The initiating agent's consult/transfer summary shown in the popover. */
+export type ConsultTransferSummaryView = Pick<AISummaryMidCallInitiatorProps, AISummaryViewProps> & {
+  state: ReturnType<typeof getAISummarySurface>;
+};
+
+/** The summary shown in the wrap-up panel. */
+export type WrapUpSummaryView = Pick<AISummaryPostCallProps, AISummaryViewProps | 'onRetry'> & {
+  state: ReturnType<typeof getAISummarySurface>;
+};
+
+export type WrapUpSummaryReason = Pick<IWrapupCode, 'id' | 'name'>;
+
+export type WrapUpSummaryProps = {
+  reasons: readonly WrapUpSummaryReason[];
+  summary?: WrapUpSummaryView;
+  selectedReasonId?: string;
+  completionPending?: boolean;
+  onReasonChange: (reason: WrapUpSummaryReason) => void;
+  onComplete: (reason: WrapUpSummaryReason) => void;
+};
 
 export type CallControlAISummaryProps = {
-  consult?: ConsultTransferSummaryView;
-  transfer?: ConsultTransferSummaryView;
+  midCall?: ConsultTransferSummaryView;
   postCall?: WrapUpSummaryView;
-  requestMidCallSummary?: (actionType: AISummaryActionType) => Promise<void>;
+  requestMidCallSummary?: (action: AISummaryAction) => Promise<void>;
   requestPostCallSummary?: () => void;
 };
 
@@ -209,7 +235,7 @@ export type WxAppTelephonyErrorDisplay = {
   message: string;
   trackingId?: string;
   status?: number | string;
-  isWxAppTelephonyError?: boolean;
+  isWxAppTelephonyError: boolean;
 };
 
 export type TaskListComponentProps = Pick<
@@ -335,7 +361,7 @@ export interface ControlProps {
    * @param wrapupReason - The reason for wrapping up the call.
    * @param wrapupId - The ID associated with the wrap-up reason.
    */
-  wrapupCall: (wrapupReason: string, wrapupId: string) => Promise<WrapupCompletionResult>;
+  wrapupCall: (wrapupReason: string, wrapupId: string) => void | Promise<boolean>;
 
   /**
    * Flag to determine if the task is held
@@ -384,7 +410,7 @@ export interface ControlProps {
    * @param destination - The destination to transfer the call to.
    * @param destinationType - The type of destination.
    */
-  transferCall: (destination: string, destinationType: DestinationType) => void | Promise<void>;
+  transferCall: (destination: string, destinationType: DestinationType) => void;
 
   /**
    *
@@ -396,12 +422,12 @@ export interface ControlProps {
     consultDestination: string,
     destinationType: DestinationType,
     allowParticipantsToInteract: boolean
-  ) => void | Promise<void>;
+  ) => void;
 
   /**
    * Function to merge the consult call in a conference.
    */
-  consultConference: () => void | Promise<void>;
+  consultConference: () => void;
 
   /**
    * Function to switch to conference call.
@@ -426,7 +452,7 @@ export interface ControlProps {
   /**
    * Function to transfer the consult call to a already established consult.
    */
-  consultTransfer: () => void | Promise<void>;
+  consultTransfer: () => void;
 
   /**
    * Label for the state timer (e.g., "Wrap Up", "Post Call").
@@ -752,6 +778,7 @@ export interface ConsultTransferListComponentProps {
   subtitle?: string;
   presence?: 'active' | 'away';
   buttonIcon: string;
+  buttonAriaLabel?: string;
   onButtonPress: () => void;
   className?: string;
   logger: ILogger;
@@ -772,8 +799,6 @@ export interface ConsultTransferDialNumberComponentProps {
 /**
  * Interface representing the properties for ConsultTransferPopover component.
  */
-export type ConsultTransferDestinationLayout = 'voice-radio' | 'non-voice-pill';
-
 export interface ConsultTransferPopoverComponentProps {
   heading: string;
   buttonIcon: string;
@@ -789,8 +814,10 @@ export interface ConsultTransferPopoverComponentProps {
   onDialNumberSelect: (dialNumber: string, allowParticipantsToInteract: boolean) => void;
   action: 'Consult' | 'Transfer';
   availableDestinations: TaskUIControls['consultTransferDestinations']['consult'];
-  destinationLayout?: ConsultTransferDestinationLayout;
-  interactionId?: string;
+  /** Eligible telephony tasks use the summary layout with destination radios and a close button. */
+  isTelephony?: boolean;
+  summary?: ConsultTransferSummaryView;
+  onClose?: () => void;
   /** Options governing popover visibility/behavior */
   consultTransferOptions?: ConsultTransferOptions;
   isConferenceInProgress?: boolean;
@@ -804,9 +831,9 @@ export interface CallControlConsultComponentsProps {
   agentName: string;
   consultTimerLabel: string;
   consultTimerTimestamp: number;
-  consultTransfer: () => void | Promise<void>;
+  consultTransfer: () => void;
   endConsultCall: () => void;
-  consultConference: () => void | Promise<void>;
+  consultConference: () => void;
   switchToMainCall: () => void;
   logger: ILogger;
   isMuted: boolean;

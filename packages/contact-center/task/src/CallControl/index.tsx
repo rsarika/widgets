@@ -4,28 +4,32 @@ import {ErrorBoundary} from 'react-error-boundary';
 
 import store from '@webex/cc-store';
 import {useCallControl} from '../helper';
-import {CallControlProps, useCallControlProps} from '../task.types';
+import {CallControlProps} from '../task.types';
 import {CallControlComponent, TelephonyActionToast} from '@webex/cc-components';
 import {isUnacceptedCampaignPreview} from '../Utils/task-util';
 
-type CallControlControlsProps = CallControlProps & useCallControlProps;
+const CallControlInternal: React.FunctionComponent<CallControlProps> = observer(
+  ({onHoldResume, onEnd, onWrapUp, onRecordingToggle, onToggleMute, consultTransferOptions, conferenceEnabled}) => {
+    const {
+      logger,
+      currentTask,
+      wrapupCodes,
+      consultStartTimeStamp,
+      callControlAudio,
+      allowConsultToQueue,
+      isMuted,
+      agentId,
+      acceptedCampaignIds,
+      enableWxBetterTogether,
+      deviceType,
+    } = store;
 
-const CallControlControls: React.FunctionComponent<CallControlControlsProps> = observer(
-  ({
-    currentTask,
-    onHoldResume,
-    onEnd,
-    onWrapUp,
-    onRecordingToggle,
-    onToggleMute,
-    consultTransferOptions,
-    conferenceEnabled,
-    logger,
-    isMuted,
-    agentId,
-    enableWxBetterTogether,
-  }) => {
-    const {wrapupCodes, consultStartTimeStamp, callControlAudio, allowConsultToQueue, deviceType} = store;
+    // Hide call control when the current task is a campaign preview that
+    // the agent has not yet accepted. Matches agent desktop behavior where
+    // call controls are only shown after the preview contact is accepted.
+    if (currentTask && isUnacceptedCampaignPreview(currentTask, acceptedCampaignIds)) {
+      return <></>;
+    }
 
     const {telephonyToast, dismissTelephonyToast, ...callControlHookProps} = useCallControl({
       currentTask,
@@ -69,44 +73,14 @@ const CallControlControls: React.FunctionComponent<CallControlControlsProps> = o
   }
 );
 
-const CallControlInternal: React.FunctionComponent<CallControlProps> = observer(
-  ({onHoldResume, onEnd, onWrapUp, onRecordingToggle, onToggleMute, consultTransferOptions, conferenceEnabled}) => {
-    const {logger, currentTask, isMuted, agentId, acceptedCampaignIds, enableWxBetterTogether} = store;
-
-    // Hide call control when the current task is a campaign preview that
-    // the agent has not yet accepted. Matches agent desktop behavior where
-    // call controls are only shown after the preview contact is accepted.
-    if (currentTask && isUnacceptedCampaignPreview(currentTask, acceptedCampaignIds)) {
-      return <></>;
-    }
-
-    return (
-      <CallControlControls
-        currentTask={currentTask}
-        onHoldResume={onHoldResume}
-        onEnd={onEnd}
-        onWrapUp={onWrapUp}
-        onRecordingToggle={onRecordingToggle}
-        onToggleMute={onToggleMute}
-        consultTransferOptions={consultTransferOptions}
-        conferenceEnabled={conferenceEnabled}
-        logger={logger}
-        isMuted={isMuted}
-        agentId={agentId}
-        enableWxBetterTogether={enableWxBetterTogether}
-      />
-    );
-  }
-);
-
 const CallControl: React.FunctionComponent<CallControlProps> = (props) => {
   const {onAISummaryStatusChange} = props;
-
-  // Forward content-free summary status changes to the host while the widget is mounted.
-  useEffect(
-    () => (onAISummaryStatusChange ? store.onAISummaryStatusChange(onAISummaryStatusChange) : undefined),
-    [onAISummaryStatusChange]
-  );
+  useEffect(() => {
+    if (!onAISummaryStatusChange) {
+      return undefined;
+    }
+    return store.onAISummaryStatusChange(onAISummaryStatusChange);
+  }, [onAISummaryStatusChange]);
 
   return (
     <ErrorBoundary

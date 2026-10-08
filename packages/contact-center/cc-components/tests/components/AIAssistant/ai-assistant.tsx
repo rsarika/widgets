@@ -104,16 +104,13 @@ const createReceiverSummary = (overrides: Partial<ReceiverSummaryContent> = {}):
   surface: 'content',
   branchKey: 'interaction-1:agent-1:1',
   content: {
-    type: 'card',
     adaptiveCard: {type: 'AdaptiveCard', version: '1.5', body: [{type: 'TextBlock', text: 'Receiver summary'}]},
   },
   contentRevision: 3,
-  actionType: 'TRANSFER',
   selectedFeedback: 'none',
-  midCallFeedbackPending: false,
-  controlsDisabled: false,
+  feedbackPending: false,
   recordReceiverSummaryCopied: jest.fn().mockReturnValue(true),
-  setReceiverSummaryFeedback: jest.fn().mockResolvedValue({outcome: 'confirmed'}),
+  setReceiverSummaryFeedback: jest.fn(),
   ...overrides,
 });
 
@@ -404,7 +401,6 @@ describe('AIAssistantComponent', () => {
   it('applies automatic direction to mixed-direction receiver summary content only', async () => {
     const receiverSummary = createReceiverSummary({
       content: {
-        type: 'card',
         adaptiveCard: {
           type: 'AdaptiveCard',
           version: '1.5',
@@ -460,7 +456,6 @@ describe('AIAssistantComponent', () => {
     });
     const receiverSummary = createReceiverSummary({
       content: {
-        type: 'card',
         adaptiveCard: {
           type: 'AdaptiveCard',
           version: '1.5',
@@ -494,33 +489,20 @@ describe('AIAssistantComponent', () => {
     expect(receiverSummary.recordReceiverSummaryCopied).toHaveBeenCalledWith(3);
   });
 
-  it('paints receiver feedback only after the host confirms the action', async () => {
-    let resolveFeedback: (value: {outcome: 'confirmed'}) => void = () => undefined;
-    const pendingFeedback = new Promise<{outcome: 'confirmed'}>((resolve) => {
-      resolveFeedback = resolve;
-    });
-    const receiverSummary = createReceiverSummary({
-      setReceiverSummaryFeedback: jest.fn().mockReturnValue(pendingFeedback),
-    });
+  it('reports receiver feedback with the shown revision and paints the selection it is given', async () => {
+    const receiverSummary = createReceiverSummary();
     renderStatefulReceiver('closed', receiverSummary);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
     const like = await screen.findByRole('button', {name: AI_SUMMARY_MESSAGES.like});
     fireEvent.click(like);
 
-    expect(receiverSummary.setReceiverSummaryFeedback).toHaveBeenCalledWith('like', 'TRANSFER', 3);
+    expect(receiverSummary.setReceiverSummaryFeedback).toHaveBeenCalledWith('thumbs_up', 3);
     expect(like).toHaveAttribute('aria-pressed', 'false');
-
-    resolveFeedback({outcome: 'confirmed'});
-
-    await waitFor(() => expect(like).toHaveAttribute('aria-pressed', 'true'));
   });
 
   it('opens the receiver branch from View summary and disables pending feedback controls', async () => {
-    const receiverSummary = createReceiverSummary({
-      midCallFeedbackPending: true,
-      controlsDisabled: true,
-    });
+    const receiverSummary = createReceiverSummary({feedbackPending: true});
     renderStatefulReceiver('closed', receiverSummary);
 
     const viewSummary = screen.getByTestId('ai-assistant:view-summary');
@@ -564,11 +546,9 @@ describe('AIAssistantComponent', () => {
       branchKey: receiverSummary.branchKey,
       contentRevision: receiverSummary.contentRevision + 1,
       content: {
-        type: 'card',
         adaptiveCard: {
           type: 'AdaptiveCard',
           mockFallback: true,
-          body: [{type: 'Image', url: 'https://example.invalid/only.png'}],
         },
       },
     });
@@ -635,7 +615,6 @@ describe('AIAssistantComponent', () => {
           createReceiverSummary({
             contentRevision: receiverSummary.contentRevision + 1,
             content: {
-              type: 'card',
               adaptiveCard: {
                 type: 'AdaptiveCard',
                 mockDeferredRender: true,

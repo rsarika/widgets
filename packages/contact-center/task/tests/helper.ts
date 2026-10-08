@@ -2,7 +2,7 @@ import React from 'react';
 import {renderHook, act, waitFor, render} from '@testing-library/react';
 import {observer} from 'mobx-react-lite';
 import {runInAction} from 'mobx';
-import {useIncomingTask, useTaskList, useCallControl, useOutdialCall, useAISummaryActions} from '../src/helper';
+import {useIncomingTask, useTaskList, useCallControl, useOutdialCall, getAISummaryProps} from '../src/helper';
 import {resetMuteCoordinatorForTests} from '../src/mute-coordinator';
 import {resetOfferActionAttemptsForTests} from '../src/offer-action-attempts';
 import {
@@ -50,7 +50,7 @@ const onTaskSelected = jest.fn().mockImplementation(() => {});
 const logger = mockCC.LoggerProxy;
 const initialStoreLogger = store.store.logger;
 
-type AISummaryActionsSnapshot = ReturnType<typeof useAISummaryActions>;
+type AISummaryActionsSnapshot = ReturnType<typeof getAISummaryProps>;
 type TaskDataOverride = Partial<NonNullable<ITask['data']>> & {
   interaction?: Partial<NonNullable<NonNullable<ITask['data']>['interaction']>>;
 };
@@ -118,7 +118,7 @@ const createAISummaryTask = (overrides: AISummaryTaskOverrides = {}): ITask => {
 const renderObservedAISummaryActions = (task: ITask) => {
   let current: AISummaryActionsSnapshot = undefined;
   const Probe = observer(({observedTask}: {observedTask: ITask}) => {
-    current = useAISummaryActions(observedTask);
+    current = getAISummaryProps(observedTask);
     return null;
   });
   const view = render(React.createElement(Probe, {observedTask: task}));
@@ -165,7 +165,7 @@ beforeAll(() => {
   } as IContactCenter;
 });
 
-describe('useAISummaryActions Hook', () => {
+describe('getAISummaryProps', () => {
   beforeEach(() => {
     resetAISummaryStoreState();
   });
@@ -179,8 +179,7 @@ describe('useAISummaryActions Hook', () => {
     const task = createAISummaryTask();
     const probe = renderObservedAISummaryActions(task);
 
-    expect(probe.current?.consult?.state).toBe('omitted');
-    expect(probe.current?.transfer?.state).toBe('omitted');
+    expect(probe.current?.midCall?.state).toBe('omitted');
     expect(probe.current?.postCall?.state).toBe('omitted');
 
     await act(async () => {
@@ -188,30 +187,19 @@ describe('useAISummaryActions Hook', () => {
     });
 
     expect(task.requestMidCallSummary).toHaveBeenCalledWith('CONSULT');
-    await waitFor(() => expect(probe.current?.consult?.state).toBe('content'));
-    expect(probe.current?.consult?.content).toMatchObject({
-      type: 'sections',
-      sections: expect.arrayContaining([
-        expect.objectContaining({key: 'reasonForTransferOrConsult', value: 'Customer needs billing help.'}),
-      ]),
+    await waitFor(() => expect(probe.current?.midCall?.state).toBe('content'));
+    expect(probe.current?.midCall?.content).toMatchObject({
+      sections: {reasonForTransferOrConsult: 'Customer needs billing help.'},
     });
 
-    const midCallRevision = probe.current?.consult?.contentRevision ?? -1;
-    await act(async () => {
-      await expect(probe.current?.consult?.onFeedback('like', 'CONSULT', midCallRevision)).resolves.toEqual({
-        outcome: 'confirmed',
-      });
+    const midCallRevision = probe.current?.midCall?.contentRevision ?? -1;
+    act(() => {
+      expect(probe.current?.midCall?.onFeedback('thumbs_up', midCallRevision)).toBe(true);
     });
 
-    expect(task.sendMidCallSummaryResponse).toHaveBeenCalledWith(
-      expect.objectContaining({
-        feedback: 'thumbs_up',
-        state: 'DEFAULT',
-        summary: expect.objectContaining({reasonForTransferOrConsult: 'Customer needs billing help.'}),
-      }),
-      'CONSULT'
-    );
-    await waitFor(() => expect(probe.current?.consult?.selectedFeedback).toBe('like'));
+    // The initiator's feedback is sent with the consult/transfer response, not on its own.
+    expect(task.sendMidCallSummaryResponse).not.toHaveBeenCalled();
+    await waitFor(() => expect(probe.current?.midCall?.selectedFeedback).toBe('thumbs_up'));
 
     await act(async () => {
       probe.current?.requestPostCallSummary?.();
@@ -223,22 +211,17 @@ describe('useAISummaryActions Hook', () => {
 
     const postCallRevision = probe.current?.postCall?.contentRevision ?? -1;
     act(() => {
-      expect(
-        probe.current?.postCall?.onEdit({key: 'initialContactReason', value: 'Edited reason'}, postCallRevision)
-      ).toBe(true);
+      expect(probe.current?.postCall?.onEdit('initialContactReason', 'Edited reason', postCallRevision)).toBe(true);
     });
     await waitFor(() =>
-      expect(probe.current?.postCall?.content).toMatchObject({
-        sections: expect.arrayContaining([expect.objectContaining({value: 'Edited reason'})]),
-      })
+      expect(probe.current?.postCall?.content).toMatchObject({sections: {initialContactReason: 'Edited reason'}})
     );
     expect(probe.current?.postCall?.contentRevision).toBe(postCallRevision);
 
     act(() => {
-      expect(probe.current?.postCall?.onFeedback('dislike', postCallRevision)).toBe(true);
+      expect(probe.current?.postCall?.onFeedback('thumbs_down', postCallRevision)).toBe(true);
     });
-    await waitFor(() => expect(probe.current?.postCall?.selectedFeedback).toBe('dislike'));
-    expect(probe.current?.postCall?.feedbackStatus).toBe('pending');
+    await waitFor(() => expect(probe.current?.postCall?.selectedFeedback).toBe('thumbs_down'));
   });
 
   it('should omit summaries the SDK reports as disabled for the task', () => {
@@ -250,14 +233,36 @@ describe('useAISummaryActions Hook', () => {
     expect(probe.current).toBeUndefined();
 
     probe.rerender(createAISummaryTask({aiSummaryCapabilities: {midCallEnabled: false, postCallEnabled: true}}));
-    expect(probe.current?.consult).toBeUndefined();
+    expect(probe.current?.midCall).toBeUndefined();
     expect(probe.current?.postCall?.state).toBe('omitted');
+  });
+
+  it('should map store entries to summary surfaces and pass their content through', () => {
+    const task = createAISummaryTask();
+    const entry = {revision: 2, copied: 0, edited: false, feedback: 'none' as const};
+    runInAction(() => {
+      store.store.aiSummaries = {
+        [AI_SUMMARY_INTERACTION_ID]: {
+          initiator: {...entry, status: 'error', error: 'unsupported'},
+          'post-call': {...entry, status: 'ready', content: {summaryText: 'Resolved billing issue.'}},
+        },
+      };
+    });
+
+    const props = getAISummaryProps(task);
+
+    expect(props?.midCall).toMatchObject({state: 'unavailable', content: {}});
+    expect(props?.postCall).toMatchObject({
+      state: 'content',
+      content: {summaryText: 'Resolved billing issue.'},
+      contentRevision: 2,
+    });
   });
 
   it('should call the store for every mid-call summary request', async () => {
     const task = createAISummaryTask();
     const requestSpy = jest.spyOn(store, 'requestMidCallSummary').mockResolvedValue(undefined);
-    const {result} = renderHook(() => useAISummaryActions(task));
+    const {result} = renderHook(() => getAISummaryProps(task));
 
     await result.current?.requestMidCallSummary?.('CONSULT');
     await result.current?.requestMidCallSummary?.('CONSULT');
@@ -270,7 +275,7 @@ describe('useAISummaryActions Hook', () => {
   it('should request the post-call summary only once per wrap-up', async () => {
     const task = createAISummaryTask();
     const requestSpy = jest.spyOn(store, 'requestPostCallSummary');
-    const {result} = renderHook(() => useAISummaryActions(task));
+    const {result} = renderHook(() => getAISummaryProps(task));
 
     await act(async () => {
       result.current?.requestPostCallSummary?.();
@@ -285,8 +290,8 @@ describe('useAISummaryActions Hook', () => {
   it('should report the initiator summary as each consult or transfer starts', async () => {
     const task = createAISummaryTask();
     const order: string[] = [];
-    jest.spyOn(store, 'sendMidCallSummaryResponse').mockImplementation(async (actionType) => {
-      order.push(`summary:${actionType}`);
+    jest.spyOn(store, 'sendMidCallSummaryResponse').mockImplementation(async (action) => {
+      order.push(`summary:${action}`);
     });
     (task.consult as jest.Mock).mockImplementation(async () => {
       order.push('consult');
@@ -3182,11 +3187,11 @@ describe('useCallControl', () => {
       wrapupResult = await result.current.wrapupCall('Wrap reason', '123');
     });
 
-    expect(wrapupResult).toEqual({wrapup: 'succeeded', response: 'not-required'});
+    expect(wrapupResult).toBe(true);
     expect(mockCurrentTask.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Wrap reason', auxCodeId: '123'});
   });
 
-  it('should send the post-call summary only after wrap-up succeeds and report a failed response', async () => {
+  it('should send the post-call summary with the reason name after wrap-up succeeds, without waiting for it', async () => {
     resetAISummaryStoreState();
     const successTask = createAISummaryTask();
     const wrapupDeferred = (() => {
@@ -3215,9 +3220,7 @@ describe('useCallControl', () => {
       })
     );
 
-    let completion!: Promise<
-      {wrapup: 'succeeded'; response: 'submitted' | 'response-failed' | 'not-required'} | {wrapup: 'failed'}
-    >;
+    let completion!: Promise<boolean>;
     await act(async () => {
       completion = successHook.result.current.wrapupCall('Customer Issue', 'wrap1');
       await Promise.resolve();
@@ -3236,7 +3239,7 @@ describe('useCallControl', () => {
       expect.objectContaining({
         feedback: 'none',
         state: 'DEFAULT',
-        wrapUpCode: 'wrap1',
+        wrapUpCode: 'Customer Issue',
         summary: expect.objectContaining({
           initialContactReason: 'Customer called about an invoice discrepancy.',
           keyActionsTaken: 'Send corrected invoice by email.',
@@ -3244,12 +3247,12 @@ describe('useCallControl', () => {
         }),
       })
     );
-    await expect(completion).resolves.toEqual({wrapup: 'succeeded', response: 'submitted'});
+    await expect(completion).resolves.toBe(true);
     successHook.unmount();
 
     resetAISummaryStoreState();
     const failedResponseTask = createAISummaryTask({
-      sendPostCallSummaryResponse: jest.fn().mockRejectedValue(new Error('response rejected')),
+      sendPostCallSummaryResponse: jest.fn(() => new Promise<void>(() => undefined)),
     });
 
     await act(async () => {
@@ -3274,10 +3277,39 @@ describe('useCallControl', () => {
       failedResponseResult = await failedResponseHook.result.current.wrapupCall('Customer Issue', 'wrap1');
     });
 
-    expect(failedResponseResult).toEqual({wrapup: 'succeeded', response: 'response-failed'});
+    expect(failedResponseResult).toBe(true);
     expect(failedResponseTask.wrapup).toHaveBeenCalledWith({wrapUpReason: 'Customer Issue', auxCodeId: 'wrap1'});
     expect(failedResponseTask.sendPostCallSummaryResponse).toHaveBeenCalledTimes(1);
-    expect(mockLogger.error).not.toHaveBeenCalledWith('Error wrapping up call', expect.anything());
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('should keep the post-call summary and send nothing when wrap-up fails', async () => {
+    resetAISummaryStoreState();
+    const task = createAISummaryTask({wrapup: jest.fn().mockRejectedValue(new Error('wrap-up failed'))});
+    await act(async () => {
+      await store.requestPostCallSummary(task);
+    });
+    const {result} = renderHook(() =>
+      useCallControl({
+        currentTask: task,
+        onHoldResume: mockOnHoldResume,
+        onEnd: mockOnEnd,
+        onWrapUp: mockOnWrapUp,
+        logger: mockLogger,
+        isMuted: false,
+        conferenceEnabled: true,
+        agentId: 'agent1',
+      })
+    );
+
+    let wrapupResult;
+    await act(async () => {
+      wrapupResult = await result.current.wrapupCall('Customer Issue', 'wrap1');
+    });
+
+    expect(wrapupResult).toBe(false);
+    expect(task.sendPostCallSummaryResponse).not.toHaveBeenCalled();
+    expect(store.aiSummaries[AI_SUMMARY_INTERACTION_ID]?.['post-call']?.content).toBeDefined();
   });
 
   it('should log an error if wrapup fails', async () => {
@@ -3301,8 +3333,8 @@ describe('useCallControl', () => {
       wrapupResult = await result.current.wrapupCall('Wrap reason', '123');
     });
 
-    expect(wrapupResult).toEqual({wrapup: 'failed'});
-    expect(mockLogger.error).toHaveBeenCalledWith('Error wrapping up call', {
+    expect(wrapupResult).toBe(false);
+    expect(mockLogger.error).toHaveBeenCalledWith('Error wrapping up call: Error: Wrapup error', {
       module: 'widget-cc-task#helper.ts',
       method: 'useCallControl#wrapupCall',
     });
@@ -8345,8 +8377,8 @@ describe('Task Hook Error Handling and Logging', () => {
         wrapupResult = await result.current.wrapupCall('test reason', '123');
       });
 
-      expect(wrapupResult).toEqual({wrapup: 'failed'});
-      expect(logger.error).toHaveBeenCalledWith('Error wrapping up call', {
+      expect(wrapupResult).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith('Error wrapping up call: Error: wrapupCall synchronous error', {
         module: 'widget-cc-task#helper.ts',
         method: 'useCallControl#wrapupCall',
       });

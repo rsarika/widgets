@@ -28,17 +28,18 @@ import {
   DesktopPreference,
   RealTimeAssistPayload,
   OfferActionErrorDisplay,
-  AISummaryActionType,
-  AISummaryEditableField,
   AISummaryEntry,
-  AISummaryFeedback,
-  AISummaryFeedbackResult,
-  AISummaryMidCallRole,
   AISummaryRole,
   AISummaryStatusDetail,
 } from './store.types';
 import Store from './store';
-import type {AISummary, AISummaryResponse} from '@webex/contact-center';
+import type {
+  AISummary,
+  AISummaryAction,
+  AISummaryFeedback,
+  AISummaryResponse,
+  AISummarySections,
+} from '@webex/contact-center';
 import {
   DEVICE_TYPE_BROWSER,
   MEDIA_TYPE_TELEPHONY_LOWER,
@@ -47,7 +48,7 @@ import {
   CAMPAIGN_PREVIEW_CAMPAIGN_TYPES,
 } from './store.types';
 import {runInAction} from 'mobx';
-import {isIncomingTask, isSecondaryAgent, isTelephonyTask} from './task-utils';
+import {isAISummaryEnabled, isIncomingTask, isSecondaryAgent} from './task-utils';
 import {SUGGESTED_RESPONSE_EVENT, TASK_MULTI_LOGIN_HYDRATE} from './constants';
 import {
   composeMidCallResponse,
@@ -55,7 +56,6 @@ import {
   editAISummaryContent,
   newAISummaryEntry,
   normalizeAISummaryPayload,
-  type AISummaryResult,
 } from './ai-summary';
 
 const CONSULT_TRANSFER_CHANNELS = {
@@ -275,7 +275,7 @@ class StoreWrapper implements IStoreWrapper {
   };
 
   private isTelephonyTask(task: ITask | null | undefined): boolean {
-    return isTelephonyTask(task);
+    return task?.data?.interaction?.mediaType === MEDIA_TYPE_TELEPHONY_LOWER;
   }
 
   private persistTelephonyMuteCacheForCurrentTask(value: boolean): void {
@@ -395,19 +395,19 @@ class StoreWrapper implements IStoreWrapper {
   private applyAISummaryResult(
     interactionId: string,
     role: AISummaryRole,
-    result: AISummaryResult,
-    actionType?: AISummaryActionType
+    result: ReturnType<typeof normalizeAISummaryPayload>,
+    action?: AISummaryAction
   ): void {
     const entry = this.store.aiSummaries[interactionId]?.[role] ?? newAISummaryEntry();
     const kind = role === 'post-call' ? 'post-call' : 'mid-call';
-    if (result.kind === 'success') {
+    if (typeof result !== 'string') {
       // A new summary replaces the old one along with its copies, edits and feedback.
       this.setAISummaryEntry(interactionId, role, {
         ...newAISummaryEntry(),
         status: 'ready',
-        content: result.content,
+        content: result,
         revision: entry.revision + 1,
-        actionType: actionType ?? entry.actionType,
+        action: action ?? entry.action,
       });
       this.notifyAISummaryStatus({kind, state: 'available'});
       return;
@@ -417,8 +417,8 @@ class StoreWrapper implements IStoreWrapper {
     this.setAISummaryEntry(interactionId, role, {
       ...entry,
       status: 'error',
-      error: result.error,
-      actionType: entry.actionType ?? actionType,
+      error: result,
+      action: entry.action ?? action,
     });
     if (!entry.content) {
       this.notifyAISummaryStatus({kind, state: 'unavailable'});
@@ -429,7 +429,7 @@ class StoreWrapper implements IStoreWrapper {
     role: AISummaryRole,
     task: ITask,
     request: () => Promise<AISummary>,
-    actionType?: AISummaryActionType
+    action?: AISummaryAction
   ): Promise<void> {
     const interactionId = task?.data?.interactionId;
     if (!interactionId) {
@@ -438,34 +438,40 @@ class StoreWrapper implements IStoreWrapper {
     const entry = this.getAISummaryEntry(role, task) ?? newAISummaryEntry();
     this.setAISummaryEntry(interactionId, role, {...entry, status: 'loading'});
 
-    let result: AISummaryResult;
+    let result: ReturnType<typeof normalizeAISummaryPayload>;
     try {
       result = normalizeAISummaryPayload(await request(), role);
     } catch (error) {
       this.logAISummaryFailure('request', error);
-      result = {kind: 'error', error: 'failed'};
+      result = 'failed';
     }
     if (this.getAISummaryEntry(role, task)?.status === 'loading') {
-      this.applyAISummaryResult(interactionId, role, result, actionType);
+      this.applyAISummaryResult(interactionId, role, result, action);
     }
   }
 
-  requestMidCallSummary = (actionType: AISummaryActionType, task: ITask = this.currentTask): Promise<void> =>
-    this.requestAISummary('initiator', task, () => task.requestMidCallSummary(actionType), actionType);
+  requestMidCallSummary = async (action: AISummaryAction, task: ITask = this.currentTask): Promise<void> => {
+    if (isAISummaryEnabled(task, 'midCallEnabled')) {
+      await this.requestAISummary('initiator', task, () => task.requestMidCallSummary(action), action);
+    }
+  };
 
-  requestPostCallSummary = (task: ITask = this.currentTask): Promise<void> =>
-    this.requestAISummary('post-call', task, () => task.requestPostCallSummary());
+  requestPostCallSummary = async (task: ITask = this.currentTask): Promise<void> => {
+    if (isAISummaryEnabled(task, 'postCallEnabled')) {
+      await this.requestAISummary('post-call', task, () => task.requestPostCallSummary());
+    }
+  };
 
   // The receiving agent's summary is pushed by the backend whether or not this agent has the feature enabled.
   private handleAISummaryReceived = (task: ITask, payload: unknown): void => {
     const interactionId = task.data?.interactionId;
     if (interactionId) {
-      const actionType = isSecondaryAgent(task) ? 'CONSULT' : 'TRANSFER';
-      this.applyAISummaryResult(interactionId, 'receiver', normalizeAISummaryPayload(payload, 'receiver'), actionType);
+      const action = isSecondaryAgent(task) ? 'CONSULT' : 'TRANSFER';
+      this.applyAISummaryResult(interactionId, 'receiver', normalizeAISummaryPayload(payload, 'receiver'), action);
     }
   };
 
-  // Edits, copies and post-call feedback apply only to the summary the agent was shown.
+  // Edits, copies and feedback apply only to the summary the agent was shown.
   private updateShownAISummary(
     role: AISummaryRole,
     expectedRevision: number,
@@ -485,76 +491,69 @@ class StoreWrapper implements IStoreWrapper {
 
   editAISummary = (
     role: AISummaryRole,
-    field: AISummaryEditableField,
+    key: keyof AISummarySections | 'summaryText',
+    value: string,
     expectedRevision: number,
     task: ITask = this.currentTask
-  ): boolean => this.updateShownAISummary(role, expectedRevision, task, (entry) => editAISummaryContent(entry, field));
+  ): boolean =>
+    this.updateShownAISummary(role, expectedRevision, task, (entry) => editAISummaryContent(entry, key, value));
 
   recordAISummaryCopied = (role: AISummaryRole, expectedRevision: number, task: ITask = this.currentTask): boolean =>
     this.updateShownAISummary(role, expectedRevision, task, (entry) => ({...entry, copied: entry.copied + 1}));
 
-  /** Post-call feedback stays local until the final response sent after wrap-up. */
-  setPostCallSummaryFeedback = (
+  /**
+   * Like Agent Desktop, the initiator's and the wrap-up feedback stay local: they are sent with the consult/transfer
+   * response or the final post-call response.
+   */
+  setAISummaryFeedback = (
+    role: Exclude<AISummaryRole, 'receiver'>,
     feedback: Exclude<AISummaryFeedback, 'none'>,
     expectedRevision: number,
     task: ITask = this.currentTask
-  ): boolean => this.updateShownAISummary('post-call', expectedRevision, task, (entry) => ({...entry, feedback}));
+  ): boolean => this.updateShownAISummary(role, expectedRevision, task, (entry) => ({...entry, feedback}));
 
-  /** Mid-call feedback is sent right away; the selection is kept once the SDK confirms it. */
-  setMidCallSummaryFeedback = async (
-    role: AISummaryMidCallRole,
+  /** The receiving agent's feedback is sent right away; the selection is kept once the SDK confirms it. */
+  setReceiverSummaryFeedback = async (
     feedback: Exclude<AISummaryFeedback, 'none'>,
-    actionType: AISummaryActionType,
     expectedRevision: number,
     task: ITask = this.currentTask
-  ): Promise<AISummaryFeedbackResult> => {
-    const entry = this.getAISummaryEntry(role, task);
-    if (!entry?.content || entry.revision !== expectedRevision) {
-      return {outcome: 'stale'};
-    }
-    if (entry.feedbackPending) {
-      return {outcome: 'blocked'};
+  ): Promise<void> => {
+    const entry = this.getAISummaryEntry('receiver', task);
+    if (!entry?.content || !entry.action || entry.revision !== expectedRevision || entry.feedbackPending) {
+      return;
     }
     const interactionId = task.data.interactionId;
-    this.setAISummaryEntry(interactionId, role, {...entry, feedbackPending: true});
+    this.setAISummaryEntry(interactionId, 'receiver', {...entry, feedbackPending: true});
 
     let sent = true;
     try {
-      await task.sendMidCallSummaryResponse(composeMidCallResponse({...entry, feedback}), actionType);
+      await task.sendMidCallSummaryResponse(composeMidCallResponse({...entry, feedback}), entry.action);
     } catch (error) {
       sent = false;
       this.logAISummaryFailure('feedback', error);
     }
 
-    const current = this.getAISummaryEntry(role, task);
-    if (current?.revision !== expectedRevision) {
-      // A new summary replaced this one, or the task was removed, while the response was in flight.
-      return {outcome: 'stale'};
+    const current = this.getAISummaryEntry('receiver', task);
+    // A new summary replaced this one, or the task was removed, while the response was in flight.
+    if (current?.revision === expectedRevision) {
+      this.setAISummaryEntry(interactionId, 'receiver', {
+        ...current,
+        feedback: sent ? feedback : current.feedback,
+        feedbackPending: false,
+      });
     }
-    this.setAISummaryEntry(interactionId, role, {
-      ...current,
-      feedback: sent ? feedback : current.feedback,
-      feedbackPending: false,
-    });
-    return sent ? {outcome: 'confirmed'} : {outcome: 'failed'};
   };
 
   /**
    * Reports the initiator's summary for the consult or transfer that is starting. Like Agent Desktop, callers do
    * not wait for it; it never rejects.
    */
-  sendMidCallSummaryResponse = async (
-    actionType: AISummaryActionType,
-    task: ITask = this.currentTask
-  ): Promise<void> => {
-    if (!isTelephonyTask(task) || !task.aiSummaryCapabilities?.midCallEnabled) {
+  sendMidCallSummaryResponse = async (action: AISummaryAction, task: ITask = this.currentTask): Promise<void> => {
+    if (!isAISummaryEnabled(task, 'midCallEnabled')) {
       return;
     }
     try {
-      await task.sendMidCallSummaryResponse(
-        composeMidCallResponse(this.getAISummaryEntry('initiator', task)),
-        actionType
-      );
+      await task.sendMidCallSummaryResponse(composeMidCallResponse(this.getAISummaryEntry('initiator', task)), action);
     } catch (error) {
       this.logAISummaryFailure('response', error);
     }
@@ -565,7 +564,7 @@ class StoreWrapper implements IStoreWrapper {
    * removed once wrap-up completes.
    */
   getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined =>
-    isTelephonyTask(task) && task.aiSummaryCapabilities?.postCallEnabled
+    isAISummaryEnabled(task, 'postCallEnabled')
       ? composePostCallResponse(this.getAISummaryEntry('post-call', task), wrapUpCode)
       : undefined;
 

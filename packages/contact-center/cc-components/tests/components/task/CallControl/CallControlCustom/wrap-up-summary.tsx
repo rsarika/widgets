@@ -5,9 +5,9 @@ import React from 'react';
 import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import '@testing-library/jest-dom';
 import WrapUpSummary from '../../../../../src/components/task/CallControl/CallControlCustom/wrap-up-summary';
-import {WrapUpSummaryView} from '../../../../../src/components/task/CallControl/CallControlCustom/wrap-up-summary.types';
+import {WrapUpSummaryView} from '../../../../../src/components/task/task.types';
 import {AI_SUMMARY_MESSAGES} from '../../../../../src/components/AISummary';
-import {CLEAR_SEARCH} from '../../../../../src/components/task/constants';
+import {CLEAR_SEARCH, WRAP_UP_INTERACTION} from '../../../../../src/components/task/constants';
 
 const reasons = [
   {id: 'aux-1', name: 'Resolved'},
@@ -18,35 +18,22 @@ const reasons = [
 const COMPLETE_WRAP_UP_LABEL = 'Complete Wrap-Up';
 const REASON_GROUP_NAME = AI_SUMMARY_MESSAGES.postCall.chooseReason;
 
-const deferred = <T,>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
-  });
-  return {promise, resolve, reject};
-};
-
 const createSummary = (overrides: Partial<WrapUpSummaryView> = {}): WrapUpSummaryView => ({
   state: 'content',
   content: {
-    type: 'sections',
-    sections: [
-      {key: 'initialContactReason', value: 'Customer asked about billing.', editable: true},
-      {key: 'keyActionsTaken', value: 'Send invoice.', editable: true},
-    ],
+    sections: {
+      initialContactReason: 'Customer asked about billing.',
+      keyActionsTaken: 'Send invoice.',
+    },
     resolution: 'Issue resolved',
   },
   contentRevision: 6,
   selectedFeedback: 'none',
-  feedbackStatus: undefined,
   requestPending: false,
   onEdit: jest.fn().mockReturnValue(true),
   onCopy: jest.fn().mockReturnValue(true),
   onFeedback: jest.fn().mockReturnValue(true),
   onRetry: jest.fn().mockResolvedValue(undefined),
-  onCopyVisualStateChange: jest.fn(),
   ...overrides,
 });
 
@@ -83,19 +70,11 @@ describe('WrapUpSummary', () => {
   });
 
   it('renders named reason search and radio group with the stable complete action', () => {
-    const onReasonCommit = jest.fn();
-    const onComplete = jest.fn();
     render(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary()}
-        onReasonCommit={onReasonCommit}
-        onComplete={onComplete}
-      />
+      <WrapUpSummary reasons={reasons} summary={createSummary()} onReasonChange={jest.fn()} onComplete={jest.fn()} />
     );
 
-    // A generated structured summary is still editable when the reasons collapse.
-    expect(screen.getByText(AI_SUMMARY_MESSAGES.postCall.eyebrow)).toBeInTheDocument();
+    expect(screen.getByText(WRAP_UP_INTERACTION)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', {
         name: AI_SUMMARY_MESSAGES.editSectionLabel(AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason),
@@ -104,7 +83,6 @@ describe('WrapUpSummary', () => {
     expect(
       screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason})
     ).not.toBeDisabled();
-    fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel}));
     expect(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel})).toHaveAttribute(
       'placeholder',
       AI_SUMMARY_MESSAGES.postCall.searchPlaceholder
@@ -120,7 +98,7 @@ describe('WrapUpSummary', () => {
   });
 
   it('renders zero-match copy as ordinary visible text without live semantics', () => {
-    render(<WrapUpSummary reasons={reasons} onReasonCommit={jest.fn()} onComplete={jest.fn()} />);
+    render(<WrapUpSummary reasons={reasons} onReasonChange={jest.fn()} onComplete={jest.fn()} />);
 
     fireEvent.change(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel}), {
       target: {value: 'not a reason'},
@@ -133,7 +111,7 @@ describe('WrapUpSummary', () => {
   });
 
   it('uses the shared clear-search label and clears the reason filter', () => {
-    render(<WrapUpSummary reasons={reasons} onReasonCommit={jest.fn()} onComplete={jest.fn()} />);
+    render(<WrapUpSummary reasons={reasons} onReasonChange={jest.fn()} onComplete={jest.fn()} />);
     const search = screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel});
     fireEvent.change(search, {target: {value: 'Billing'}});
     expect(screen.queryByRole('radio', {name: 'Resolved'})).not.toBeInTheDocument();
@@ -142,17 +120,9 @@ describe('WrapUpSummary', () => {
     expect(screen.getByRole('radio', {name: 'Resolved'})).toBeInTheDocument();
   });
 
-  it('commits only the final selected reason after roving-focus arrow traversal and blur', () => {
+  it('reports each reason the agent moves to with the arrow keys', () => {
     const onReasonChange = jest.fn();
-    const onReasonCommit = jest.fn();
-    render(
-      <WrapUpSummary
-        reasons={reasons}
-        onReasonChange={onReasonChange}
-        onReasonCommit={onReasonCommit}
-        onComplete={jest.fn()}
-      />
-    );
+    render(<WrapUpSummary reasons={reasons} onReasonChange={onReasonChange} onComplete={jest.fn()} />);
 
     const firstReason = screen.getByRole('radio', {name: 'Resolved'});
     act(() => {
@@ -166,72 +136,38 @@ describe('WrapUpSummary', () => {
     expect(screen.getByRole('radio', {name: 'Billing question'})).toHaveFocus();
     pressFocusedReasonKey('ArrowUp');
     expect(screen.getByRole('radio', {name: 'Follow up needed'})).toHaveFocus();
-    fireEvent.blur(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}), {
-      relatedTarget: null,
-    });
 
     expect(onReasonChange).toHaveBeenCalledTimes(3);
-    expect(onReasonCommit).toHaveBeenCalledTimes(1);
-    expect(onReasonCommit).toHaveBeenLastCalledWith({id: 'aux-2', name: 'Follow up needed'}, 3);
+    expect(onReasonChange).toHaveBeenLastCalledWith({id: 'aux-2', name: 'Follow up needed'});
   });
 
-  it('commits pointer and activation-key selections once', () => {
-    const onReasonCommit = jest.fn();
-    render(<WrapUpSummary reasons={reasons} onReasonCommit={onReasonCommit} onComplete={jest.fn()} />);
-
-    fireEvent.click(screen.getByRole('radio', {name: 'Follow up needed'}));
-    fireEvent.blur(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}), {
-      relatedTarget: null,
-    });
-    expect(onReasonCommit).toHaveBeenCalledTimes(1);
-    expect(onReasonCommit).toHaveBeenLastCalledWith({id: 'aux-2', name: 'Follow up needed'}, 1);
-
-    const billing = screen.getByRole('radio', {name: 'Billing question'});
-    act(() => {
-      billing.focus();
-    });
-    pressFocusedReasonKey('Enter');
-    fireEvent.blur(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}), {
-      relatedTarget: null,
-    });
-    expect(onReasonCommit).toHaveBeenCalledTimes(2);
-    expect(onReasonCommit).toHaveBeenLastCalledWith({id: 'aux-3', name: 'Billing question'}, 2);
-
-    const resolved = screen.getByRole('radio', {name: 'Resolved'});
-    act(() => {
-      resolved.focus();
-    });
-    pressFocusedReasonKey(' ');
-    fireEvent.blur(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}), {
-      relatedTarget: null,
-    });
-    expect(onReasonCommit).toHaveBeenCalledTimes(3);
-    expect(onReasonCommit).toHaveBeenLastCalledWith({id: 'aux-1', name: 'Resolved'}, 3);
-  });
-
-  it('should let the agent select and commit a reason while the summary is still generating', () => {
+  it('should let the agent select a reason while the summary is still generating', () => {
     const onReasonChange = jest.fn();
-    const onReasonCommit = jest.fn();
-    render(
+    const {rerender} = render(
       <WrapUpSummary
         reasons={reasons}
         summary={createSummary({state: 'generating', requestPending: true})}
         onReasonChange={onReasonChange}
-        onReasonCommit={onReasonCommit}
         onComplete={jest.fn()}
       />
     );
 
     const reasonGroup = screen.getByRole('radiogroup', {name: REASON_GROUP_NAME});
-    const secondReason = screen.getByRole('radio', {name: 'Follow up needed'});
     expect(reasonGroup.parentElement).not.toHaveAttribute('aria-disabled');
 
-    fireEvent.click(secondReason);
-    fireEvent.blur(reasonGroup, {relatedTarget: null});
+    fireEvent.click(screen.getByRole('radio', {name: 'Follow up needed'}));
+    expect(onReasonChange).toHaveBeenCalledWith({id: 'aux-2', name: 'Follow up needed'});
 
-    expect(secondReason).toBeChecked();
-    expect(onReasonChange).toHaveBeenCalledWith(expect.objectContaining({name: 'Follow up needed'}), 1);
-    expect(onReasonCommit).toHaveBeenCalledWith(expect.objectContaining({name: 'Follow up needed'}), 1);
+    rerender(
+      <WrapUpSummary
+        reasons={reasons}
+        summary={createSummary({state: 'generating', requestPending: true})}
+        selectedReasonId="aux-2"
+        onReasonChange={onReasonChange}
+        onComplete={jest.fn()}
+      />
+    );
+    expect(screen.getByRole('radio', {name: 'Follow up needed'})).toBeChecked();
   });
 
   it('should not hold back Complete Wrap-Up while the summary is generating', () => {
@@ -240,8 +176,8 @@ describe('WrapUpSummary', () => {
       <WrapUpSummary
         reasons={reasons}
         summary={createSummary({state: 'generating', requestPending: true})}
-        initialReasonId="aux-1"
-        onReasonCommit={jest.fn()}
+        selectedReasonId="aux-1"
+        onReasonChange={jest.fn()}
         onComplete={onComplete}
       />
     );
@@ -255,11 +191,10 @@ describe('WrapUpSummary', () => {
     const retainedDraft = createSummary({
       requestPending: true,
       content: {
-        type: 'sections',
-        sections: [
-          {key: 'initialContactReason', value: 'Edited summary survives.', editable: true},
-          {key: 'nextSteps', value: 'Call back tomorrow.', editable: true},
-        ],
+        sections: {
+          initialContactReason: 'Edited summary survives.',
+          nextSteps: 'Call back tomorrow.',
+        },
         resolution: undefined,
       },
     });
@@ -267,8 +202,8 @@ describe('WrapUpSummary', () => {
       <WrapUpSummary
         reasons={reasons}
         summary={retainedDraft}
-        initialReasonId="aux-1"
-        onReasonCommit={jest.fn()}
+        selectedReasonId="aux-1"
+        onReasonChange={jest.fn()}
         onComplete={onComplete}
       />
     );
@@ -286,8 +221,8 @@ describe('WrapUpSummary', () => {
     render(
       <WrapUpSummary
         reasons={reasons}
-        summary={createSummary({feedbackStatus: 'pending', selectedFeedback: 'like'})}
-        onReasonCommit={jest.fn()}
+        summary={createSummary({selectedFeedback: 'thumbs_up'})}
+        onReasonChange={jest.fn()}
         onComplete={jest.fn()}
       />
     );
@@ -295,125 +230,40 @@ describe('WrapUpSummary', () => {
     expect(screen.getByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission)).toBeInTheDocument();
   });
 
-  it('blocks local completion re-entry until a rejected completion settles', async () => {
-    const completion = deferred<void>();
-    const secondCompletion = deferred<void>();
-    const onComplete = jest.fn().mockReturnValueOnce(completion.promise).mockReturnValueOnce(secondCompletion.promise);
-    render(
+  it('should keep the reasons and summary read-only while wrap-up completion is in progress', () => {
+    const renderPanel = (completionPending: boolean) => (
       <WrapUpSummary
         reasons={reasons}
         summary={createSummary()}
-        initialReasonId="aux-1"
-        onReasonCommit={jest.fn()}
-        onComplete={onComplete}
+        selectedReasonId="aux-1"
+        completionPending={completionPending}
+        onReasonChange={jest.fn()}
+        onComplete={jest.fn()}
       />
     );
-
-    const complete = screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
-    fireEvent.click(complete);
-    fireEvent.click(complete);
-
-    expect(onComplete).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(complete).toBeDisabled());
-
-    await act(async () => {
-      completion.reject(new Error('wrapup rejected'));
-      await completion.promise.catch(() => undefined);
-    });
-
-    await waitFor(() => expect(complete).not.toBeDisabled());
-    fireEvent.click(complete);
-    expect(onComplete).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(complete).toBeDisabled());
-    await act(async () => {
-      secondCompletion.resolve(undefined);
-      await secondCompletion.promise;
-    });
-    await waitFor(() => expect(complete).not.toBeDisabled());
-  });
-
-  it('should keep the summary read-only while wrap-up completion is in progress', async () => {
-    const completion = deferred<void>();
-    render(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary()}
-        initialReasonId="aux-1"
-        onReasonCommit={jest.fn()}
-        onComplete={jest.fn().mockReturnValue(completion.promise)}
-      />
-    );
+    const {rerender} = render(renderPanel(false));
     const editInitialReason = screen.getByRole('button', {
       name: AI_SUMMARY_MESSAGES.editSectionLabel(AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason),
     });
     expect(editInitialReason).not.toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL}));
+    rerender(renderPanel(true));
 
-    await waitFor(() => expect(editInitialReason).toBeDisabled());
+    expect(editInitialReason).toBeDisabled();
     expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toBeDisabled();
-
-    await act(async () => {
-      completion.resolve(undefined);
-      await completion.promise;
-    });
-    await waitFor(() => expect(editInitialReason).not.toBeDisabled());
-  });
-
-  it('makes a summary with disabled controls read-only', () => {
-    render(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary({controlsDisabled: true, selectedFeedback: 'like'})}
-        onReasonCommit={jest.fn()}
-        onComplete={jest.fn()}
-      />
-    );
-
     expect(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL})).toBeDisabled();
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel})).toBeDisabled();
-    expect(
-      screen.getByRole('button', {
-        name: AI_SUMMARY_MESSAGES.editSectionLabel(AI_SUMMARY_MESSAGES.sectionLabels.initialContactReason),
-      })
-    ).toBeDisabled();
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary})).toBeDisabled();
-    expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toBeDisabled();
-  });
-
-  it('moves focus between the collapsed reason trigger and expanded search controls', async () => {
-    const onReasonCommit = jest.fn();
-    render(
-      <WrapUpSummary
-        reasons={reasons}
-        summary={createSummary()}
-        onReasonCommit={onReasonCommit}
-        onComplete={jest.fn()}
-      />
+    expect(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}).parentElement).toHaveAttribute(
+      'aria-disabled',
+      'true'
     );
 
-    const reasonTrigger = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel});
-    act(() => {
-      reasonTrigger.focus();
-    });
-    fireEvent.click(reasonTrigger);
-
-    await waitFor(() =>
-      expect(screen.getByRole('textbox', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel})).toHaveFocus()
-    );
-
-    fireEvent.click(screen.getByRole('radio', {name: 'Follow up needed'}));
-
-    const restoredTrigger = await screen.findByRole('button', {
-      name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel,
-    });
-    await waitFor(() => expect(restoredTrigger).toHaveFocus());
-    expect(onReasonCommit).toHaveBeenCalledWith({id: 'aux-2', name: 'Follow up needed'}, 1);
+    rerender(renderPanel(false));
+    expect(editInitialReason).not.toBeDisabled();
   });
 
   it('restores focus to the wrap-up panel when the summary subtree is removed', async () => {
     const {rerender} = render(
-      <WrapUpSummary reasons={reasons} summary={createSummary()} onReasonCommit={jest.fn()} onComplete={jest.fn()} />
+      <WrapUpSummary reasons={reasons} summary={createSummary()} onReasonChange={jest.fn()} onComplete={jest.fn()} />
     );
 
     const copy = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary});
@@ -422,7 +272,7 @@ describe('WrapUpSummary', () => {
     });
     expect(copy).toHaveFocus();
 
-    rerender(<WrapUpSummary reasons={reasons} onReasonCommit={jest.fn()} onComplete={jest.fn()} />);
+    rerender(<WrapUpSummary reasons={reasons} onReasonChange={jest.fn()} onComplete={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('wrap-up-summary')).toHaveFocus());
     expect(screen.queryByTestId('wrap-up-summary:body')).not.toBeInTheDocument();
@@ -441,29 +291,19 @@ describe('WrapUpSummary', () => {
             reasons={manyReasons}
             summary={createSummary({
               content: {
-                type: 'sections',
-                sections: [
-                  {
-                    key: 'initialContactReason',
-                    value: 'A long retained summary paragraph that wraps inside the bounded content scroll region.',
-                    editable: true,
-                  },
-                  {
-                    key: 'keyActionsTaken',
-                    value: 'Send corrected invoice, document the call, and schedule a follow-up.',
-                    editable: true,
-                  },
-                ],
+                sections: {
+                  initialContactReason:
+                    'A long retained summary paragraph that wraps inside the bounded content scroll region.',
+                  keyActionsTaken: 'Send corrected invoice, document the call, and schedule a follow-up.',
+                },
                 resolution: 'Resolved with billing adjustment.',
               },
             })}
-            onReasonCommit={jest.fn()}
+            onReasonChange={jest.fn()}
             onComplete={jest.fn()}
           />
         </div>
       );
-
-      fireEvent.click(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.postCall.reasonSearchLabel}));
 
       const panel = screen.getByTestId('wrap-up-summary');
       const panelStyle = getComputedStyle(panel);

@@ -1,10 +1,10 @@
 import React from 'react';
-import {act, render, waitFor} from '@testing-library/react';
+import {act, render} from '@testing-library/react';
 import {runInAction} from 'mobx';
 import * as helper from '../../src/helper';
 import {CallControl} from '../../src';
 import store, {type ITask} from '@webex/cc-store';
-import {createEnabledMainTaskUIControls, makeMockTask, mockTask} from '@webex/test-fixtures';
+import {createEnabledMainTaskUIControls, mockTask} from '@webex/test-fixtures';
 import {TARGET_TYPE} from '../../src/task.types';
 import '@testing-library/jest-dom';
 
@@ -175,44 +175,6 @@ describe('CallControl Component', () => {
 
     expect(firstCallback).not.toHaveBeenCalled();
     expect(secondCallback).toHaveBeenCalledWith({kind: 'post-call', state: 'submitted'});
-  });
-
-  it('should keep forwarding statuses while a campaign preview transitions to accepted controls', async () => {
-    const campaignTask = makeMockTask({
-      data: {
-        interactionId: 'campaign-preview-1',
-        interaction: {
-          interactionId: 'campaign-preview-1',
-          outboundType: 'STANDARD_PREVIEW_CAMPAIGN',
-          callProcessingDetails: {campaignType: 'preview_standard'},
-        },
-      },
-    });
-    runInAction(() => {
-      store.store.currentTask = campaignTask;
-      store.store.acceptedCampaignIds = new Set();
-    });
-    const useCallControlSpy = jest
-      .spyOn(helper, 'useCallControl')
-      .mockReturnValue(createUseCallControlReturn({currentTask: campaignTask}));
-    const onAISummaryStatusChange = jest.fn();
-    const mockOnErrorCallback = jest.fn();
-    store.onErrorCallback = mockOnErrorCallback;
-
-    render(<CallControl onAISummaryStatusChange={onAISummaryStatusChange} />);
-    expect(useCallControlSpy).not.toHaveBeenCalled();
-
-    await act(async () => {
-      await submitPostCallSummary(jest.fn().mockResolvedValue(undefined));
-    });
-    expect(onAISummaryStatusChange).toHaveBeenCalledWith({kind: 'post-call', state: 'submitted'});
-
-    act(() => {
-      store.addAcceptedCampaign('campaign-preview-1');
-    });
-
-    await waitFor(() => expect(useCallControlSpy).toHaveBeenCalled());
-    expect(mockOnErrorCallback).not.toHaveBeenCalled();
   });
 
   describe('ErrorBoundary Tests', () => {

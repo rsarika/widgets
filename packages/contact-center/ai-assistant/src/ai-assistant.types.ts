@@ -1,10 +1,4 @@
-import type {
-  AISummaryActionType,
-  AISummaryContent,
-  AISummaryFeedback,
-  AISummaryFeedbackResult,
-  RealTimeAssistPayload,
-} from '@webex/cc-store';
+import type {RealTimeAssistPayload} from '@webex/cc-store';
 
 /**
  * Public props for the `AIAssistant` widget.  All callbacks are optional —
@@ -32,38 +26,7 @@ export interface UseAiAssistantInput extends IAIAssistantProps {
   agentId: string;
   isFeatureEnabled: boolean;
   realTimeAssist: RealTimeAssistPayload[];
-  receiverSummary?: AIAssistantReceiverSummary;
 }
-
-export type AIAssistantReceiverSummary =
-  | {
-      surface: 'content';
-      branchKey: string;
-      content: Extract<AISummaryContent, {type: 'card'}>;
-      contentRevision: number;
-      actionType: AISummaryActionType;
-      selectedFeedback: AISummaryFeedback;
-      midCallFeedbackPending: boolean;
-      controlsDisabled: boolean;
-      recordReceiverSummaryCopied: (expectedRevision: number) => boolean;
-      setReceiverSummaryFeedback: (
-        feedback: Exclude<AISummaryFeedback, 'none'>,
-        actionType: AISummaryActionType,
-        expectedRevision: number
-      ) => Promise<AISummaryFeedbackResult>;
-    }
-  | {
-      surface: 'unavailable' | 'generic-error';
-      branchKey: string;
-      content?: never;
-      contentRevision?: never;
-      actionType?: never;
-      selectedFeedback?: never;
-      midCallFeedbackPending?: never;
-      controlsDisabled?: never;
-      recordReceiverSummaryCopied?: never;
-      setReceiverSummaryFeedback?: never;
-    };
 
 export type UseAIAssistantChromeInput = Pick<
   UseAiAssistantInput,

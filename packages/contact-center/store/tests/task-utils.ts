@@ -2,9 +2,8 @@ import {
   isIncomingTask,
   getConferenceParticipants,
   getConferenceParticipantDropRoster,
-  findMediaResourceId,
   findHoldTimestamp,
-  isTelephonyTask,
+  isAISummaryEnabled,
 } from '../src/task-utils';
 import {mockTask} from '../../test-fixtures/src/fixtures';
 import {createEnabledMainTaskUIControls} from '../../test-fixtures/src/taskUIControlsFixtures';
@@ -192,16 +191,17 @@ describe('isIncomingTask', () => {
   });
 });
 
-describe('isTelephonyTask', () => {
-  it('uses the shared lower-case telephony media policy', () => {
-    const telephonyTask = JSON.parse(JSON.stringify(mockTask));
-    telephonyTask.data.interaction.mediaType = 'telephony';
-    const chatTask = JSON.parse(JSON.stringify(mockTask));
-    chatTask.data.interaction.mediaType = 'chat';
+describe('isAISummaryEnabled', () => {
+  it('should follow the SDK capability for telephony tasks only', () => {
+    const task = JSON.parse(JSON.stringify(mockTask));
+    task.data.interaction.mediaType = 'telephony';
+    task.aiSummaryCapabilities = {midCallEnabled: true, postCallEnabled: false};
+    const chatTask = {...task, data: {...task.data, interaction: {...task.data.interaction, mediaType: 'chat'}}};
 
-    expect(isTelephonyTask(telephonyTask)).toBe(true);
-    expect(isTelephonyTask(chatTask)).toBe(false);
-    expect(isTelephonyTask(null)).toBe(false);
+    expect(isAISummaryEnabled(task, 'midCallEnabled')).toBe(true);
+    expect(isAISummaryEnabled(task, 'postCallEnabled')).toBe(false);
+    expect(isAISummaryEnabled(chatTask, 'midCallEnabled')).toBe(false);
+    expect(isAISummaryEnabled(undefined, 'midCallEnabled')).toBe(false);
   });
 });
 
@@ -220,41 +220,6 @@ const createMockTask = (data: Partial<ITask['data']>): ITask => {
 const createPartialInteraction = (interaction: unknown): ITask['data']['interaction'] => {
   return interaction as ITask['data']['interaction'];
 };
-
-describe('findMediaResourceId', () => {
-  it('matches only the requested media type and returns the mediaResourceId', () => {
-    const task = createMockTask({
-      interaction: createPartialInteraction({
-        media: {
-          alias: {
-            mType: 'main',
-            mediaResourceId: 'alias-id',
-          },
-          main: {
-            mType: 'mainCall',
-            mediaResourceId: 'main-call-id',
-          },
-        },
-      }),
-    });
-
-    expect(findMediaResourceId(task, 'mainCall')).toBe('main-call-id');
-  });
-
-  it('does not fall back to media map keys when mediaResourceId is absent', () => {
-    const task = createMockTask({
-      interaction: createPartialInteraction({
-        media: {
-          'main-call-id': {
-            mType: 'mainCall',
-          },
-        },
-      }),
-    });
-
-    expect(findMediaResourceId(task, 'mainCall')).toBe('');
-  });
-});
 
 describe('getConferenceParticipants', () => {
   const currentAgentId = 'agent1';

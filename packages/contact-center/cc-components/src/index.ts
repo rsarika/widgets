@@ -13,7 +13,6 @@ import E911Modal from './components/StationLogin/E911Modal/e911-modal';
 import AIAssistantComponent from './components/AIAssistant/ai-assistant';
 import TelephonyActionToast from './components/task/TelephonyActionToast/telephony-action-toast';
 import WxAppOfferActionError from './components/task/WxAppOfferActionError/wxapp-offer-action-error';
-import {AISummary} from './components/AISummary';
 
 export {
   UserStateComponent,
@@ -31,7 +30,6 @@ export {
   AIAssistantComponent,
   TelephonyActionToast,
   WxAppOfferActionError,
-  AISummary,
 };
 export * from './components/StationLogin/constants';
 export * from './components/StationLogin/E911Modal/e911-modal.types';
@@ -41,5 +39,4 @@ export * from './components/task/task.types';
 export * from './components/task/CampaignErrorDialog/campaign-error-dialog.types';
 export * from './components/task/CampaignCountdown/campaign-countdown.types';
 export * from './components/AIAssistant/ai-assistant.types';
-export * from './components/AISummary';
 export {isWxAppEngagedCall, shouldShowWxAppTelephonyControls} from './utils/wxapp-telephony.utils';

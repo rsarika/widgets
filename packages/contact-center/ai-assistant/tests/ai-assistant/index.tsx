@@ -25,7 +25,7 @@ jest.mock('@webex/cc-store', () => {
     onErrorCallback: undefined,
     clearRealTimeAssist: jest.fn(),
     recordAISummaryCopied: jest.fn(),
-    setMidCallSummaryFeedback: jest.fn(),
+    setReceiverSummaryFeedback: jest.fn(),
   };
 
   return {
@@ -41,7 +41,7 @@ jest.mock('@webex/cc-store', () => {
       onErrorCallback: observable.ref,
       clearRealTimeAssist: false,
       recordAISummaryCopied: false,
-      setMidCallSummaryFeedback: false,
+      setReceiverSummaryFeedback: false,
     }),
   };
 });
@@ -62,7 +62,7 @@ type StoreMock = {
   onErrorCallback?: jest.Mock;
   clearRealTimeAssist: jest.Mock;
   recordAISummaryCopied: jest.Mock;
-  setMidCallSummaryFeedback: jest.Mock;
+  setReceiverSummaryFeedback: jest.Mock;
 };
 const storeMock = store as unknown as StoreMock;
 
@@ -72,9 +72,8 @@ const receiverEntry = (overrides: Partial<AISummaryEntry> = {}): AISummaryEntry 
   copied: 0,
   edited: false,
   feedback: 'none',
-  actionType: 'TRANSFER',
+  action: 'TRANSFER',
   content: {
-    type: 'card',
     adaptiveCard: {
       type: 'AdaptiveCard',
       version: '1.5',
@@ -121,7 +120,7 @@ describe('AIAssistant widget', () => {
     storeMock.onErrorCallback = undefined;
     storeMock.recordAISummaryCopied.mockReturnValue(true);
     storeMock.cc.apiAIAssistant.sendRealTimeAssistanceUserAction.mockResolvedValue(undefined);
-    storeMock.setMidCallSummaryFeedback.mockResolvedValue({outcome: 'confirmed'});
+    storeMock.setReceiverSummaryFeedback.mockResolvedValue(undefined);
   });
 
   it('renders launcher when chrome is closed', () => {
@@ -218,7 +217,7 @@ describe('AIAssistant widget', () => {
     expect(screen.queryByTestId('ai-assistant:landing')).not.toBeInTheDocument();
   });
 
-  it('routes receiver copy and feedback through the store with the current revision and action type', async () => {
+  it('routes receiver copy and feedback through the store with the current revision', async () => {
     setReceiverEntry(receiverEntry());
     render(<AIAssistant />);
 
@@ -231,13 +230,7 @@ describe('AIAssistant widget', () => {
     fireEvent.click(screen.getByRole('button', {name: 'This is helpful'}));
 
     await waitFor(() =>
-      expect(storeMock.setMidCallSummaryFeedback).toHaveBeenCalledWith(
-        'receiver',
-        'like',
-        'TRANSFER',
-        7,
-        storeMock.currentTask
-      )
+      expect(storeMock.setReceiverSummaryFeedback).toHaveBeenCalledWith('thumbs_up', 7, storeMock.currentTask)
     );
   });
 
@@ -253,9 +246,9 @@ describe('AIAssistant widget', () => {
   });
 
   it('replaces receiver feedback projections only after the store confirms the selection', async () => {
-    const feedbackSend = deferred<{outcome: 'confirmed'}>();
+    const feedbackSend = deferred<void>();
     setReceiverEntry(receiverEntry());
-    storeMock.setMidCallSummaryFeedback.mockImplementationOnce(() => {
+    storeMock.setReceiverSummaryFeedback.mockImplementationOnce(() => {
       setReceiverEntry(receiverEntry({feedbackPending: true}));
       return feedbackSend.promise;
     });
@@ -268,8 +261,8 @@ describe('AIAssistant widget', () => {
     await waitFor(() => expect(like).toBeDisabled());
     expect(like).toHaveAttribute('aria-pressed', 'false');
 
-    feedbackSend.resolve({outcome: 'confirmed'});
-    setReceiverEntry(receiverEntry({feedback: 'like'}));
+    feedbackSend.resolve();
+    setReceiverEntry(receiverEntry({feedback: 'thumbs_up'}));
 
     await waitFor(() =>
       expect(screen.getByRole('button', {name: 'This is helpful'})).toHaveAttribute('aria-pressed', 'true')
