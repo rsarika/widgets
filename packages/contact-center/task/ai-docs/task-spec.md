@@ -553,6 +553,30 @@ Tests are split between widget-shell render tests (each `tests/<Widget>/index.ts
 | `TASK-R-024` participant Drop orchestration       | `tests/helper.ts` (exact payload, duplicate prevention, success/failure cleanup, sanitized callback/logging, stale completion, roster re-derivation) | Live routing-event behavior is covered by SDK/manual integration tests |
 | `TASK-R-025` SDK destination-control pass-through | `tests/CallControl/index.tsx`, `tests/CallControlCAD/index.tsx`; cc-components focused destination tests                                             | None                                                                   |
 
+## AI summaries in CallControl
+
+`getAISummaryProps` in `src/helper.ts` maps the current task's SDK capabilities and
+store summary entries into optional mid-call and post-call views with store callbacks.
+It supplies no summary props when both capabilities are disabled.
+
+Opening consult/transfer requests the corresponding mid-call summary. `consultCall`
+and `transferCall` send the initiator response through the store as the existing SDK
+operation starts; they do not wait for summary submission. `wrapupCall` freezes the
+post-call response, awaits the existing Task `wrapup` call, promotes the next task,
+then sends the summary response without waiting. The response's `wrapUpCode` is the
+selected reason name. `wrapupCall` resolves a boolean so the summary UI can retain
+its draft after failure and disable completion while wrap-up is pending. Concurrent
+wrap-up calls for the same active task share one in-flight completion promise, so
+rapid repeated activation cannot submit the same task twice.
+
+CallControl accepts optional `onAISummaryStatusChange`; the outer widget subscribes
+while that callback is present and unsubscribes on replacement or unmount. The exported
+`AISummaryStatusDetail` contains only kind and state. Widgets access summary APIs
+through `@webex/cc-store`.
+
+Evidence: `src/helper.ts`, `src/CallControl/index.tsx`, `src/task.types.ts`;
+tests: AI summary cases in `tests/helper.ts` and `tests/CallControl/index.tsx`.
+
 ## Traceability
 
 - Repo architecture: [`ARCHITECTURE.md`](../../../../ai-docs/ARCHITECTURE.md) · Registry: [`SPEC_INDEX.md`](../../../../ai-docs/SPEC_INDEX.md) · Contracts: [`CONTRACTS.md`](../../../../ai-docs/CONTRACTS.md)

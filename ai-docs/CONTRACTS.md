@@ -37,6 +37,14 @@ The React entry of `@webex/cc-widgets` re-exports the widgets, including `AIAssi
 | ui-logging.withMetrics | `@webex/cc-ui-logging` | `withMetrics` | `withMetrics<P extends object>(Component, widgetName: string): React.MemoExoticComponent` HOC that auto-emits mount/unmount/error metrics; every widget export is wrapped with it | stable semver; signature change is breaking | `packages/contact-center/ui-logging/ai-docs/ui-logging-spec.md` | `packages/contact-center/ui-logging/src/index.ts` |
 | ui-logging.WidgetMetrics | `@webex/cc-ui-logging` | `WidgetMetrics` (type) | `{ widgetName; event: 'WIDGET_MOUNTED' \| 'ERROR' \| 'WIDGET_UNMOUNTED' \| 'PROPS_UPDATED'; props?; timestamp; additionalContext? }` | stable semver; narrowing the `event` union or removing a field is breaking | `packages/contact-center/ui-logging/ai-docs/ui-logging-spec.md` | `packages/contact-center/ui-logging/src/index.ts` |
 
+## AI summary surfaces
+
+| Contract ID | Package | Surface | Purpose | Compatibility | Detail |
+| --- | --- | --- | --- | --- | --- |
+| task.ai-summary-status | `@webex/cc-task`, `@webex/cc-widgets` | `CallControl.onAISummaryStatusChange`, `AISummaryStatusDetail` | Optional content-free status callback; the CallControl custom element accepts a function property, with inert callback attributes | additive optional callback and type | `packages/contact-center/task/ai-docs/task-spec.md`, `packages/contact-center/cc-widgets/ai-docs/cc-widgets-spec.md` |
+| store.ai-summary | `@webex/cc-store` | `aiSummaries`, SDK summary types, `getAISummarySurface`, and StoreWrapper summary actions | SDK requests/responses and per-interaction UI state, edits, copies and feedback | additive SDK boundary | `packages/contact-center/store/ai-docs/store-spec.md` |
+| cc-components.ai-summary-props | `@webex/cc-components` | `CallControlComponentProps.aiSummary`, `AIAssistantComponentProps.receiverSummary` | Optional summary views and callbacks; the shared AISummary component is internal | additive optional props; wrapupCall supports void or Promise<boolean> | `packages/contact-center/cc-components/ai-docs/cc-components-spec.md` |
+
 ## Requires — what this repo depends on
 | Dependency (service / package / datastore) | What is consumed | Schema / detail link | Availability assumption | Fallback on failure | Version floor |
 |---|---|---|---|---|---|

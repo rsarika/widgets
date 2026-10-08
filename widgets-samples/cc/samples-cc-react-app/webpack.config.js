@@ -14,6 +14,7 @@ const PKG_SRC = [
   'packages/contact-center/user-state/src',
   'packages/contact-center/task/src',
   'packages/contact-center/cc-components/src',
+  'packages/contact-center/ai-assistant/src',
   'packages/contact-center/ui-logging/src',
   'packages/contact-center/cc-digital-channels/src',
 ].map((p) => resolveMonorepoRoot(p));
@@ -59,6 +60,7 @@ module.exports = {
       '@webex/cc-user-state': path.resolve(__dirname, '../../../packages/contact-center/user-state/src'),
       '@webex/cc-task': path.resolve(__dirname, '../../../packages/contact-center/task/src'),
       '@webex/cc-components': path.resolve(__dirname, '../../../packages/contact-center/cc-components/src'),
+      '@webex/cc-ai-assistant': path.resolve(__dirname, '../../../packages/contact-center/ai-assistant/src'),
       '@webex/cc-ui-logging': path.resolve(__dirname, '../../../packages/contact-center/ui-logging/src'),
       '@webex/cc-digital-channels': path.resolve(__dirname, '../../../packages/contact-center/cc-digital-channels/src'),
       ...(contactCenterSdkEntry ? {'@webex/contact-center$': contactCenterSdkEntry} : {}),

@@ -271,6 +271,21 @@ views and the ErrorBoundary path. `tests/ai-assistant/feedback.tsx` covers like/
 and the missing-`adaptiveCardId` warning. UI-level rendering (spinner, error text,
 snapshots) is covered in `cc-components/tests/components/AIAssistant/`.
 
+## Receiving-agent AI summaries
+
+`getReceiverSummary` in `src/helper.ts` reads the current interaction's receiver entry
+from `store.aiSummaries`, maps its surface with `getAISummarySurface`, and passes the
+SDK-shaped content, revision, confirmed feedback and pending state to the presentation
+component. Its copy and feedback callbacks pass the captured Task and displayed
+revision to the store. The widget makes no summary SDK calls.
+
+The receiver branch is independent of Real-time Assist enablement. A missing receiver
+entry supplies no branch; failed or unsupported summaries supply the matching status
+surface. Summary changes are observed by `AIAssistantInternal`.
+
+Evidence: `src/helper.ts`, `src/ai-assistant/index.tsx`;
+tests: receiver summary cases in `tests/ai-assistant/index.tsx`.
+
 ## Traceability
 
 - Repo architecture: `../../../../ai-docs/ARCHITECTURE.md` · Registry: `../../../../ai-docs/SPEC_INDEX.md`

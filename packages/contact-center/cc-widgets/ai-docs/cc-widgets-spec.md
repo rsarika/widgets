@@ -53,7 +53,7 @@ state, or SDK access — those live upstream in the widget packages and `@webex/
 
 ## Stack
 TypeScript 5.6.3, React 18 (peer `>=18.3.1`), `@r2wc/react-to-web-component` 2.0.3. Test stack: Jest
-29.7.0 + jsdom + React Testing Library (configured in `package.json`, but no tests currently exist).
+29.7.0 + jsdom + React Testing Library (configured in `package.json`; AI summary callback coverage is in `tests/wc.ai-summary.ts`).
 Build: `tsc` for type declarations and webpack 5 for the two bundles (`dist/index.js`, `dist/wc.js`).
 No datastore or messaging.
 
@@ -366,6 +366,20 @@ tested by the upstream widget packages, not here.
 | `cc-widgets-R-005` (Momentum CSS imported) | None found | No test for the CSS side-effect import. |
 | `cc-widgets-R-006` (React/ReactDOM peers) | None found | Enforced by package manager only; no automated check here. |
 | `cc-widgets-R-007` (CallControlCAD inherits Drop without a new WC surface) | Covered by upstream task/component tests | No package-local test; the wrapper and prop map are unchanged. |
+
+## AI summary status callback
+
+The React barrel exports `AISummaryStatusDetail`. The `widget-cc-call-control` element
+accepts `onAISummaryStatusChange` as a JavaScript function property, including assignment
+before element definition, replacement, removal and reconnect. Callback attributes
+remain inert and the property is not reflected into an attribute.
+
+The CallControl adapter forwards that property through React without exposing r2wc's
+container prop. Existing tag names, observed attributes and callback mappings are
+unchanged. The status detail is `{kind, state}` with mid-call availability states and
+post-call availability/submission states; it contains no summary content.
+
+Evidence: `src/index.ts`, `src/wc.ts`; tests: `tests/wc.ai-summary.ts`.
 
 ## Traceability
 - Repo architecture: [`ARCHITECTURE.md`](../../../../ai-docs/ARCHITECTURE.md) · Registry: [`SPEC_INDEX.md`](../../../../ai-docs/SPEC_INDEX.md) · Contracts: [`CONTRACTS.md`](../../../../ai-docs/CONTRACTS.md)
