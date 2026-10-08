@@ -355,6 +355,37 @@ Each component is tested in isolation with React Testing Library: render from a 
 | `CC-COMPONENTS-R-017`  | `tests/components/task/CallControlCAD/call-control-cad.tsx` (Momentum structure/configuration, sections, immediate/confirmed Drop, pending/consult disabled state, read-only rows, focus fallback, live regions) | Momentum overlay keyboard behavior and visual placement receive final manual coverage |
 | `CC-COMPONENTS-R-018`  | `tests/components/task/CallControl/CallControlCustom/consult-transfer-popover.tsx`, `tests/components/task/CallControl/CallControlCustom/consult-transfer-popover.snapshot.tsx`                                  | None                                                                                  |
 
+## AI summary presentation
+
+The internal `components/AISummary` surface renders generating, unavailable, error,
+and content states from props. Initiator and post-call summaries support keyed text
+edits, copy and feedback. Post-call supports Retry and a read-only Outcome from SDK
+`resolution`; the display labels never become SDK section keys. Receiver summaries
+use copy and feedback actions around a display-only Adaptive Card.
+
+CallControl's optional `aiSummary` prop contains the views and request callbacks.
+For eligible voice tasks, opening consult/transfer requests a summary and renders
+destination radios with the summary below the existing results. That layout stays
+stable while the open popover loses summary eligibility; voice tasks without summary
+eligibility retain the existing category buttons, reload control and list layout.
+`WrapUpSummary` shows searchable reasons and the post-call summary. Complete Wrap-Up
+remains available during generation; while completion is pending, summary edits and
+completion are disabled. The existing wrap-up form keeps its previous submission behavior.
+
+`AIAssistantComponent.receiverSummary` adds View summary to closed/minimized chrome
+and opens the receiver branch independently of Real-time Assist enablement. Copy uses
+visible card text; card actions remain inert. The receiver content revision resets
+its renderer's error boundary when replacement content arrives. Summary components recover focus when a focused
+summary control or branch is removed and no connected control has taken focus.
+
+These components receive data and callbacks through props and make no SDK calls.
+`AISummary` remains internal; it is not exported by the package's root React barrel.
+
+Evidence: `components/AISummary/`, `components/AIAssistant/`, and
+`components/task/CallControl/`; tests: the corresponding `tests/components/` suites,
+including `AISummary/ai-summary.tsx`, `AIAssistant/ai-assistant.tsx`,
+`CallControl/call-control.tsx`, `consult-transfer-popover.tsx`, and `wrap-up-summary.tsx`.
+
 ## Traceability
 
 - Repo architecture: [`ARCHITECTURE.md`](../../../../ai-docs/ARCHITECTURE.md) · Registry: [`SPEC_INDEX.md`](../../../../ai-docs/SPEC_INDEX.md) · Contracts: [`CONTRACTS.md`](../../../../ai-docs/CONTRACTS.md)

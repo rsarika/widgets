@@ -141,6 +141,7 @@ const AdaptiveCardRendererBody: React.FC<AdaptiveCardRendererProps> = ({
 
 const AdaptiveCardRenderer: React.FC<AdaptiveCardRendererProps> = ({
   card,
+  contentRevision,
   assistantTitle,
   fallbackText,
   publishTimestamp,
@@ -156,7 +157,10 @@ const AdaptiveCardRenderer: React.FC<AdaptiveCardRendererProps> = ({
       className={`ai-assistant__card${isCustomerStatement ? ' ai-assistant__card--customer-statement' : ''}`}
       data-testid="ai-assistant:adaptive-card"
     >
-      <ErrorBoundary fallbackRender={() => <AdaptiveCardFallback fallbackText={fallbackText} />}>
+      <ErrorBoundary
+        fallbackRender={() => <AdaptiveCardFallback fallbackText={fallbackText} />}
+        resetKeys={contentRevision === undefined ? undefined : [contentRevision]}
+      >
         <AdaptiveCardRendererBody
           card={card}
           assistantTitle={assistantTitle}
