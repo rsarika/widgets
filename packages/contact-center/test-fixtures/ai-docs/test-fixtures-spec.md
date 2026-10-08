@@ -227,6 +227,17 @@ The package ships no tests of its own (no `tests/` directory; confirmed by tree)
 | `test-fixtures-R-007` (barrel surface) | None found | No test guarding the public export list |
 | `test-fixtures-R-008` (task UI controls) | Call-control consumer tests; `@webex/test-fixtures` and `@webex/cc-components` builds | No package-local assertion for destination override merging |
 
+## AI summary fixtures
+
+`src/aiSummaryFixtures.ts` exports SDK-typed inputs used by the store's widget-integration
+tests: initiating mid-call sections/plain text, receiving-agent Adaptive Cards and
+unsupported content, and post-call content with Outcome boundaries. The barrel
+re-exports `aiSummaryFixtures`. SDK transport, request ordering and package admission
+fixtures belong to the SDK repository.
+
+Consumers: `store/tests/ai-summary.ts` and the AI summary cases in
+`store/tests/storeEventsWrapper.ts`.
+
 ## Traceability
 - Repo architecture: [`ARCHITECTURE.md`](../../../../ai-docs/ARCHITECTURE.md) · Registry: [`SPEC_INDEX.md`](../../../../ai-docs/SPEC_INDEX.md)
 - Coverage state & contracts baseline: `.sdd/manifest.json`

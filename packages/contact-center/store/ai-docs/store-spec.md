@@ -397,6 +397,38 @@ Unit tests are split by source file. `tests/store.ts` covers the singleton defau
 | `STORE-R-030`          | `tests/store.ts` (`enableWxBetterTogether` init paths and default)                                                                          | none                                                                                                                        |
 | `STORE-R-031`          | `tests/storeEventsWrapper.ts` ("should remove task callback even when task is absent from store.taskList", legacy string-id fallback cases) | none                                                                                                                        |
 
+## AI summaries
+
+`StoreWrapper` is the SDK boundary for summaries. `aiSummaries[interactionId][role]`
+keeps the UI state for `initiator`, `receiver`, and `post-call`; mutations replace entries
+inside `runInAction`. A new result resets edits, copy count and feedback. Refreshing or
+failing a request retains content already displayed; task removal and logout clear it.
+
+- `requestMidCallSummary(action, task)` and `requestPostCallSummary(task)` call the
+  corresponding Task SDK methods only when the task is telephony and its
+  `aiSummaryCapabilities` enables that summary kind. The SDK owns transport and request correlation.
+- `TASK_FEATURE_ENABLEMENT` refreshes the task view after SDK capabilities change.
+  `TASK_MID_CALL_SUMMARY_RECEIVED` supplies the receiver summary. Listeners are rebound
+  when a task object is replaced and detached during cleanup.
+- Initiator and post-call views use the role's nonblank SDK `sections` or `summaryText`.
+  Receiver views use `adaptiveCard`. `src/ai-summary.ts` handles this UI projection,
+  edits, `getAISummarySurface`, and response composition using SDK types.
+- Edits, copies and feedback carry the displayed revision. Initiator/post-call feedback
+  remains local until the response is sent; receiver feedback is sent immediately and
+  displayed as selected after the SDK confirms it.
+- `getPostCallSummaryResponse` freezes the response before wrap-up removes the task.
+  `sendPostCallSummaryResponse` sends it afterward and reports `submitted` or
+  `response-failed` through `onAISummaryStatusChange`. Status details contain no summary content.
+
+The integration consumes `AISummary`, `AISummarySections`, `AISummaryResponse`,
+`AISummaryAction`, `AISummaryFeedback`, and `AISummaryState` from `@webex/contact-center`.
+The temporary root resolution uses `vendor/contact-center-cc-summaries.tgz`; release
+requires replacing it with a published SDK version containing these APIs.
+
+Evidence: `src/ai-summary.ts`, `src/storeEventsWrapper.ts`, `src/store.types.ts`,
+`src/task-utils.ts`; tests: `tests/ai-summary.ts`, the AI summary cases in
+`tests/storeEventsWrapper.ts`, and `tests/task-utils.ts`.
+
 ## Traceability
 
 - Repo architecture: [`ARCHITECTURE.md`](../../../../ai-docs/ARCHITECTURE.md) · Registry: [`SPEC_INDEX.md`](../../../../ai-docs/SPEC_INDEX.md) · Contracts: [`CONTRACTS.md`](../../../../ai-docs/CONTRACTS.md)
