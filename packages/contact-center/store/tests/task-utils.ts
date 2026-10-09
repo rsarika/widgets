@@ -3,7 +3,6 @@ import {
   getConferenceParticipants,
   getConferenceParticipantDropRoster,
   findHoldTimestamp,
-  isAISummaryEnabled,
 } from '../src/task-utils';
 import {mockTask} from '../../test-fixtures/src/fixtures';
 import {createEnabledMainTaskUIControls} from '../../test-fixtures/src/taskUIControlsFixtures';
@@ -188,20 +187,6 @@ describe('isIncomingTask', () => {
       };
       expect(isIncomingTask(testTask, 'agent1')).toBe(true);
     });
-  });
-});
-
-describe('isAISummaryEnabled', () => {
-  it('should follow the SDK capability for telephony tasks only', () => {
-    const task = JSON.parse(JSON.stringify(mockTask));
-    task.data.interaction.mediaType = 'telephony';
-    task.aiSummaryCapabilities = {midCallEnabled: true, postCallEnabled: false};
-    const chatTask = {...task, data: {...task.data, interaction: {...task.data.interaction, mediaType: 'chat'}}};
-
-    expect(isAISummaryEnabled(task, 'midCallEnabled')).toBe(true);
-    expect(isAISummaryEnabled(task, 'postCallEnabled')).toBe(false);
-    expect(isAISummaryEnabled(chatTask, 'midCallEnabled')).toBe(false);
-    expect(isAISummaryEnabled(undefined, 'midCallEnabled')).toBe(false);
   });
 });
 

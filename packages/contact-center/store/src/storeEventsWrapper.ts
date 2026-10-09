@@ -50,7 +50,7 @@ import {
   CAMPAIGN_PREVIEW_CAMPAIGN_TYPES,
 } from './store.types';
 import {runInAction} from 'mobx';
-import {isAISummaryEnabled, isIncomingTask, isSecondaryAgent} from './task-utils';
+import {isIncomingTask, isSecondaryAgent} from './task-utils';
 import {SUGGESTED_RESPONSE_EVENT, TASK_MULTI_LOGIN_HYDRATE} from './constants';
 
 const EMPTY_AI_SUMMARY_RESPONSE: AISummaryResponse = {
@@ -563,7 +563,10 @@ class StoreWrapper implements IStoreWrapper {
   }
 
   private async requestAISummary(task: ITask, action?: AISummaryAction): Promise<void> {
-    if (!isAISummaryEnabled(task, action ? 'midCallEnabled' : 'postCallEnabled')) {
+    if (
+      task?.data?.interaction?.mediaType !== MEDIA_TYPE_TELEPHONY_LOWER ||
+      !task.aiSummaryCapabilities[action ? 'midCallEnabled' : 'postCallEnabled']
+    ) {
       return;
     }
     const interactionId = task.data?.interactionId;
@@ -720,7 +723,10 @@ class StoreWrapper implements IStoreWrapper {
    * not wait for it; it never rejects.
    */
   sendMidCallSummaryResponse = async (action: AISummaryAction, task: ITask = this.currentTask): Promise<void> => {
-    if (!isAISummaryEnabled(task, 'midCallEnabled')) {
+    if (
+      task?.data?.interaction?.mediaType !== MEDIA_TYPE_TELEPHONY_LOWER ||
+      !task.aiSummaryCapabilities.midCallEnabled
+    ) {
       return;
     }
     try {
@@ -737,7 +743,10 @@ class StoreWrapper implements IStoreWrapper {
    * Stores the wrap-up code and captures the SDK response before wrap-up removes the task and its summary.
    */
   getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined => {
-    if (!isAISummaryEnabled(task, 'postCallEnabled')) {
+    if (
+      task?.data?.interaction?.mediaType !== MEDIA_TYPE_TELEPHONY_LOWER ||
+      !task.aiSummaryCapabilities.postCallEnabled
+    ) {
       return undefined;
     }
     const entry = this.getAISummaryEntry('post-call', task);
@@ -1710,7 +1719,7 @@ class StoreWrapper implements IStoreWrapper {
         const listener = (payload: AISummary) => this.handleAISummaryReceived(task, payload);
         this.aiSummaryReceivedListeners[taskId] = {task, listener};
         task.on(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, listener);
-        // The SDK updates capabilities before emitting; refresh so widgets read the new flags.
+        // The SDK updates task.aiSummaryCapabilities before emitting; refresh so widgets read the new flags.
         task.on(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
       }
     }

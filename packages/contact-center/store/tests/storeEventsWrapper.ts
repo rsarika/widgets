@@ -3990,6 +3990,20 @@ describe('storeEventsWrapper', () => {
         expect(statusListener).not.toHaveBeenCalled();
       });
 
+      it('should skip summary requests and responses for non-telephony tasks', async () => {
+        const task = makeAISummaryTask({mediaType: 'chat'});
+
+        await storeWrapper.requestMidCallSummary('CONSULT', task);
+        await storeWrapper.requestPostCallSummary(task);
+        await storeWrapper.sendMidCallSummaryResponse('CONSULT', task);
+
+        expect(task.requestMidCallSummary).not.toHaveBeenCalled();
+        expect(task.requestPostCallSummary).not.toHaveBeenCalled();
+        expect(task.sendMidCallSummaryResponse).not.toHaveBeenCalled();
+        expect(storeWrapper.getPostCallSummaryResponse('aux-billing', task)).toBeUndefined();
+        expect(storeWrapper.aiSummaries).toEqual({});
+      });
+
       it('should apply only the latest request when the SDK replaces an earlier one', async () => {
         const task = makeAISummaryTask();
         const replaced = deferred<AISummary>();
@@ -4225,14 +4239,59 @@ describe('storeEventsWrapper', () => {
       });
     });
 
-    it('should refresh the task list when the SDK reports new summary capabilities', () => {
-      const task = makeAISummaryTask();
+    it('should use the latest SDK flags after task:featureEnablement refreshes the task', async () => {
+      const disabled = {midCallEnabled: false, postCallEnabled: false};
+      const enabled = {midCallEnabled: true, postCallEnabled: true};
+      const task = makeAISummaryTask({}, disabled);
+      const previousTask = storeWrapper.currentTask;
+      const previousTaskList = storeWrapper.taskList;
+      const taskManager = storeWrapper['store'].cc.taskManager;
+      const previousGetAllTasks = taskManager.getAllTasks;
+      const getAllTasks = jest.fn().mockReturnValue({[INTERACTION_ID]: task});
+      taskManager.getAllTasks = getAllTasks;
 
-      registerTaskEventListeners(task);
-      expect(task.on).toHaveBeenCalledWith(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, storeWrapper.refreshTaskList);
+      try {
+        registerTaskEventListeners(task);
+        storeWrapper.setCurrentTask(task);
+        const shownTask = storeWrapper.currentTask;
+        const featureListener = task.on.mock.calls.find(([event]) => event === TASK_EVENTS.TASK_FEATURE_ENABLEMENT)[1];
 
-      storeWrapper.handleTaskRemove(task);
-      expect(task.off).toHaveBeenCalledWith(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, storeWrapper.refreshTaskList);
+        await storeWrapper.requestMidCallSummary('CONSULT');
+        await storeWrapper.requestPostCallSummary();
+        expect(task.requestMidCallSummary).not.toHaveBeenCalled();
+        expect(task.requestPostCallSummary).not.toHaveBeenCalled();
+
+        // SDK updates its flags before emitting the event; the store reads those flags after refresh.
+        Object.assign(task, {aiSummaryCapabilities: enabled});
+        featureListener({interactionId: INTERACTION_ID, ...enabled});
+        expect(storeWrapper.currentTask).not.toBe(shownTask);
+        expect(storeWrapper.currentTask.aiSummaryCapabilities).toEqual(enabled);
+
+        await storeWrapper.requestMidCallSummary('CONSULT');
+        await storeWrapper.requestPostCallSummary();
+        await storeWrapper.sendMidCallSummaryResponse('CONSULT');
+        expect(storeWrapper.getPostCallSummaryResponse('aux-billing')).toBeDefined();
+
+        Object.assign(task, {aiSummaryCapabilities: disabled});
+        featureListener({interactionId: INTERACTION_ID, ...disabled});
+        expect(storeWrapper.currentTask.aiSummaryCapabilities).toEqual(disabled);
+        await storeWrapper.requestMidCallSummary('CONSULT');
+        await storeWrapper.requestPostCallSummary();
+        await storeWrapper.sendMidCallSummaryResponse('CONSULT');
+
+        expect(task.requestMidCallSummary).toHaveBeenCalledTimes(1);
+        expect(task.requestPostCallSummary).toHaveBeenCalledTimes(1);
+        expect(task.sendMidCallSummaryResponse).toHaveBeenCalledTimes(1);
+        expect(storeWrapper.getPostCallSummaryResponse('aux-billing')).toBeUndefined();
+
+        getAllTasks.mockReturnValue({});
+        storeWrapper.handleTaskRemove(task);
+        expect(task.off).toHaveBeenCalledWith(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, storeWrapper.refreshTaskList);
+      } finally {
+        taskManager.getAllTasks = previousGetAllTasks;
+        storeWrapper['store'].currentTask = previousTask;
+        storeWrapper['store'].taskList = previousTaskList;
+      }
     });
 
     describe('copies and edits', () => {

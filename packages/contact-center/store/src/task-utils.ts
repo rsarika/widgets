@@ -26,13 +26,6 @@ export const isIncomingTask = (task: ITask, agentId: string): boolean => {
   );
 };
 
-/** Whether the SDK reports this AI summary kind as enabled for a telephony task. */
-export const isAISummaryEnabled = (
-  task: ITask | null | undefined,
-  kind: 'midCallEnabled' | 'postCallEnabled'
-): boolean =>
-  task?.data?.interaction?.mediaType === MEDIA_TYPE_TELEPHONY_LOWER && Boolean(task?.aiSummaryCapabilities?.[kind]);
-
 /**
  * Checks if the current agent is a secondary agent in a consultation scenario.
  * Secondary agents are those who were consulted (not the original call owner).

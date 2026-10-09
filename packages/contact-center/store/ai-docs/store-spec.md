@@ -414,10 +414,14 @@ interaction ID lets task cleanup remove them together; entries are created as ne
 
 - `requestMidCallSummary(action, task)` and `requestPostCallSummary(task)` call the
   corresponding Task SDK methods only when the task is telephony and its
-  `aiSummaryCapabilities` enables that summary kind. The SDK owns transport and request correlation;
+  `aiSummaryCapabilities` enables that summary kind. Like suggested responses, summary
+  requests and responses check the SDK flags directly. The SDK owns transport and request correlation;
   the store keeps a request generation on the existing entry so an older settlement cannot
   overwrite a newer request, even when the displayed content is edited during a refresh.
-- `TASK_FEATURE_ENABLEMENT` refreshes the task view after SDK capabilities change.
+- `TASK_FEATURE_ENABLEMENT` (`task:featureEnablement`) refreshes the task view after the
+  SDK updates `task.aiSummaryCapabilities`. The current task is refreshed so observers
+  read the latest flags, including enablement arriving after the task and later disabling
+  the feature. The SDK owns the flags; the store adds no capability map or enablement helper.
   `TASK_MID_CALL_SUMMARY_RECEIVED` supplies the receiver summary. Listeners are rebound
   together when a task object is replaced, registered once per task object, and detached
   on task removal and logout.
