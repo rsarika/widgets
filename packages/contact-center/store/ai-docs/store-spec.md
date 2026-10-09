@@ -439,7 +439,9 @@ interaction ID lets task cleanup remove them together; entries are created as ne
   displayed as selected after the SDK confirms it. Each entry stores an SDK
   `AISummaryResponse` in `response`. Copy and feedback actions update
   `response.numberOfTimesCopied` and `response.feedback`; consumers read these SDK fields
-  directly. Received summaries start with `DEFAULT`, one view and `summaryReceived: true`.
+  directly. Received summaries start with `DEFAULT` and one view. A shared empty
+  response supplies the required SDK fields when no content has arrived; the SDK does
+  not supply runtime defaults.
   Requests without received content start with `IGNORED`, including retries; a failed
   request without content changes the response state to `NOT_RECEIVED`.
 - `editAISummary` updates the SDK content and `response.summary` in the store entry,

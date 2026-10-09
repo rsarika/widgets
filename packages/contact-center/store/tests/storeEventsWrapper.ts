@@ -4309,7 +4309,6 @@ describe('storeEventsWrapper', () => {
           numberOfTimesViewed: 1,
           numberOfTimesEdited: 1,
           numberOfTimesCopied: 1,
-          summaryReceived: true,
         };
         expect(entryFor('initiator')).toMatchObject({response});
 
@@ -4537,7 +4536,7 @@ describe('storeEventsWrapper', () => {
         await storeWrapper.setReceiverSummaryFeedback('thumbs_up', 1, task);
 
         expect(task.sendMidCallSummaryResponse).toHaveBeenCalledWith(
-          expect.objectContaining({summary: '', state: 'DEFAULT', summaryReceived: true, feedback: 'thumbs_up'}),
+          expect.objectContaining({summary: '', state: 'DEFAULT', numberOfTimesViewed: 1, feedback: 'thumbs_up'}),
           'TRANSFER'
         );
       });
@@ -4591,7 +4590,7 @@ describe('storeEventsWrapper', () => {
         await storeWrapper.sendMidCallSummaryResponse('TRANSFER', task);
 
         expect(task.sendMidCallSummaryResponse).toHaveBeenCalledWith(
-          expect.objectContaining({state: 'DEFAULT', summaryReceived: true, numberOfTimesViewed: 1}),
+          expect.objectContaining({state: 'DEFAULT', numberOfTimesViewed: 1}),
           'TRANSFER'
         );
       });
@@ -4609,12 +4608,12 @@ describe('storeEventsWrapper', () => {
 
         expect(task.sendMidCallSummaryResponse).toHaveBeenNthCalledWith(
           1,
-          expect.objectContaining({summary: '', state: 'IGNORED', summaryReceived: false}),
+          expect.objectContaining({summary: '', state: 'IGNORED', numberOfTimesViewed: 0}),
           'CONSULT'
         );
         expect(task.sendMidCallSummaryResponse).toHaveBeenNthCalledWith(
           2,
-          expect.objectContaining({summary: '', state: 'NOT_RECEIVED', summaryReceived: false}),
+          expect.objectContaining({summary: '', state: 'NOT_RECEIVED', numberOfTimesViewed: 0}),
           'CONSULT'
         );
       });
@@ -4639,7 +4638,7 @@ describe('storeEventsWrapper', () => {
         await storeWrapper.sendMidCallSummaryResponse('CONSULT', task);
 
         expect(task.sendMidCallSummaryResponse).toHaveBeenCalledWith(
-          expect.objectContaining({state: 'IGNORED', summaryReceived: false}),
+          expect.objectContaining({state: 'IGNORED', numberOfTimesViewed: 0}),
           'CONSULT'
         );
 

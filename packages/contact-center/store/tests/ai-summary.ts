@@ -13,7 +13,6 @@ const entryWith = (content?: Partial<AISummary>, overrides: Partial<AISummaryEnt
     numberOfTimesViewed: content ? 1 : 0,
     numberOfTimesEdited: 0,
     numberOfTimesCopied: 0,
-    summaryReceived: Boolean(content),
   },
   content: content ? {conversationId: 'interaction-main-1', ...content} : undefined,
   originalSections: content?.sections ? {...content.sections} : undefined,

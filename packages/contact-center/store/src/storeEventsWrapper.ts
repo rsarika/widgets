@@ -60,7 +60,6 @@ const EMPTY_AI_SUMMARY_RESPONSE: AISummaryResponse = {
   numberOfTimesViewed: 0,
   numberOfTimesEdited: 0,
   numberOfTimesCopied: 0,
-  summaryReceived: false,
 };
 
 const CONSULT_TRANSFER_CHANNELS = {
@@ -490,8 +489,7 @@ class StoreWrapper implements IStoreWrapper {
   // a newer request's UI state, including when its send acknowledgement fails after replacement.
 
   private getAISummaryEntry(role: AISummaryRole, task?: ITask): AISummaryEntry | undefined {
-    const interactionId = task?.data?.interactionId;
-    return interactionId ? this.store.aiSummaries[interactionId]?.[role] : undefined;
+    return task ? this.store.aiSummaries[task.data.interactionId]?.[role] : undefined;
   }
 
   private setAISummaryEntry(interactionId: string, role: AISummaryRole, entry: AISummaryEntry): void {
@@ -540,7 +538,6 @@ class StoreWrapper implements IStoreWrapper {
           summary: role !== 'receiver' && result.sections ? {} : (result.summaryText ?? ''),
           state: 'DEFAULT',
           numberOfTimesViewed: 1,
-          summaryReceived: true,
         },
         action: action ?? entry?.action,
       });
@@ -566,10 +563,7 @@ class StoreWrapper implements IStoreWrapper {
     if (!task?.aiSummaryCapabilities[action ? 'midCallEnabled' : 'postCallEnabled']) {
       return;
     }
-    const interactionId = task.data?.interactionId;
-    if (!interactionId) {
-      return;
-    }
+    const interactionId = task.data.interactionId;
     const role = action ? 'initiator' : 'post-call';
     const requestGeneration = ++this.aiSummaryRequestGeneration;
     const entry = this.getAISummaryEntry(role, task);
@@ -596,15 +590,6 @@ class StoreWrapper implements IStoreWrapper {
     this.requestAISummary(task, action);
 
   requestPostCallSummary = (task: ITask = this.currentTask): Promise<void> => this.requestAISummary(task);
-
-  // The receiving agent's summary is pushed by the backend whether or not this agent has the feature enabled.
-  private handleAISummaryReceived = (task: ITask, payload: AISummary): void => {
-    const interactionId = task.data?.interactionId;
-    if (interactionId) {
-      const action = isSecondaryAgent(task) ? 'CONSULT' : 'TRANSFER';
-      this.applyAISummaryResult(interactionId, 'receiver', payload, action);
-    }
-  };
 
   // Edits, copies and feedback apply only to the summary the agent was shown.
   private updateShownAISummary(
@@ -725,7 +710,7 @@ class StoreWrapper implements IStoreWrapper {
     }
     try {
       await task.sendMidCallSummaryResponse(
-        this.getAISummaryEntry('initiator', task)?.response ?? {...EMPTY_AI_SUMMARY_RESPONSE},
+        this.getAISummaryEntry('initiator', task)?.response ?? EMPTY_AI_SUMMARY_RESPONSE,
         action
       );
     } catch (error) {
@@ -1707,7 +1692,14 @@ class StoreWrapper implements IStoreWrapper {
       if (existingSummary?.task !== task) {
         existingSummary?.task.off(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, existingSummary.listener);
         existingSummary?.task.off(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
-        const listener = (payload: AISummary) => this.handleAISummaryReceived(task, payload);
+        // Receiver summaries are pushed regardless of this agent's feature enablement.
+        const listener = (payload: AISummary) =>
+          this.applyAISummaryResult(
+            task.data.interactionId,
+            'receiver',
+            payload,
+            isSecondaryAgent(task) ? 'CONSULT' : 'TRANSFER'
+          );
         this.aiSummaryReceivedListeners[taskId] = {task, listener};
         task.on(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, listener);
         // The SDK updates task.aiSummaryCapabilities before emitting; refresh so widgets read the new flags.
