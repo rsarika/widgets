@@ -230,8 +230,10 @@ The package ships no tests of its own (no `tests/` directory; confirmed by tree)
 ## AI summary fixtures
 
 `src/aiSummaryFixtures.ts` exports SDK-typed inputs used by the store's widget-integration
-tests: initiating mid-call sections/plain text, receiving-agent Adaptive Cards and
-unsupported content, and post-call content with Outcome boundaries. The barrel
+tests: initiating mid-call sections/plain text, receiving-agent Adaptive Cards with
+SDK summary text distinct from the displayed card, unsupported content, and post-call
+content with Outcome boundaries. The receiver text verifies that feedback preserves
+the SDK payload rather than reconstructing it from card labels. The barrel
 re-exports `aiSummaryFixtures`. SDK transport, request ordering and package admission
 fixtures belong to the SDK repository.
 

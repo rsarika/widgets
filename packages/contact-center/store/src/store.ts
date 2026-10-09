@@ -78,7 +78,7 @@ class Store implements IStore {
   legacyAuxCodeId = '';
   private wellnessIdleCodeRequestGeneration = 0;
 
-aiSummaries: IStore['aiSummaries'] = {};
+  aiSummaries: IStore['aiSummaries'] = {};
 
   constructor() {
     makeAutoObservable(this, {

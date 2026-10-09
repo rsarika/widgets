@@ -401,29 +401,53 @@ Unit tests are split by source file. `tests/store.ts` covers the singleton defau
 
 `StoreWrapper` is the SDK boundary for summaries. `aiSummaries[interactionId][role]`
 keeps the UI state for `initiator`, `receiver`, and `post-call`; mutations replace entries
-inside `runInAction`. A new result resets edits, copy count and feedback. Refreshing or
-failing a request retains content already displayed; task removal and logout clear it.
+inside `runInAction`. A new result snapshots original sections and resets edits, copy count
+and feedback. Refreshing or failing a request retains content already displayed; task
+removal and logout clear it.
+
+An agent can receive a transferred call and then consult or transfer it again. The
+received card remains in AI Assistant while the initiator summary is used in the
+consult/transfer modal, so their content, copies and feedback stay independent.
+The post-call entry holds the wrap-up summary. Grouping these entries under the task's
+interaction ID lets task cleanup remove them together; entries are created as needed.
 
 - `requestMidCallSummary(action, task)` and `requestPostCallSummary(task)` call the
   corresponding Task SDK methods only when the task is telephony and its
-  `aiSummaryCapabilities` enables that summary kind. The SDK owns transport and request correlation.
+  `aiSummaryCapabilities` enables that summary kind. The SDK owns transport and request correlation;
+  the store keeps a request generation on the existing entry so an older settlement cannot
+  overwrite a newer request, even when the displayed content is edited during a refresh.
 - `TASK_FEATURE_ENABLEMENT` refreshes the task view after SDK capabilities change.
   `TASK_MID_CALL_SUMMARY_RECEIVED` supplies the receiver summary. Listeners are rebound
-  when a task object is replaced and detached during cleanup.
-- Initiator and post-call views use the role's nonblank SDK `sections` or `summaryText`.
-  Receiver views use `adaptiveCard`. `src/ai-summary.ts` handles this UI projection,
-  edits, `getAISummarySurface`, and response composition using SDK types.
+  together when a task object is replaced, registered once per task object, and detached
+  on task removal and logout.
+- Initiator and post-call views use the role's SDK `sections` when any has content,
+  preserving blank sibling fields for editing, or fall back to `summaryText`.
+  Receiver views use `adaptiveCard` and retain SDK `summaryText` for feedback without
+  flattening card text. `src/ai-summary.ts` handles this UI projection,
+  edits, `getAISummarySurface`, and one shared response composer using SDK types.
+  Requests and receiver listeners pass SDK `AISummary` directly. The helper selects
+  role-specific content and checks whether there is anything to display; it does not
+  parse `unknown` payloads or revalidate SDK field types. Invalid transport payloads
+  belong to the SDK boundary.
 - Edits, copies and feedback carry the displayed revision. Initiator/post-call feedback
   remains local until the response is sent; receiver feedback is sent immediately and
   displayed as selected after the SDK confirms it.
+- Structured responses contain only sections whose values differ from the received
+  snapshot, matching Agent Desktop. An unchanged summary sends `{}`; a cleared section
+  sends its key with `''`. Plain-text responses use the current SDK summary text.
 - `getPostCallSummaryResponse` freezes the response before wrap-up removes the task.
-  `sendPostCallSummaryResponse` sends it afterward and reports `submitted` or
-  `response-failed` through `onAISummaryStatusChange`. Status details contain no summary content.
+  `sendPostCallSummaryResponse(response, task)` requires that original task to send it
+  afterward, because `currentTask` may already refer to another interaction. It reports
+  `submitted` or `response-failed` through `onAISummaryStatusChange`. Status details contain
+  no summary content.
 
 The integration consumes `AISummary`, `AISummarySections`, `AISummaryResponse`,
-`AISummaryAction`, `AISummaryFeedback`, and `AISummaryState` from `@webex/contact-center`.
+`AISummaryAction`, and `AISummaryFeedback` from `@webex/contact-center`.
 The temporary root resolution uses `vendor/contact-center-cc-summaries.tgz`; release
 requires replacing it with a published SDK version containing these APIs.
+The store re-exports only the SDK summary types its consumers use; the UI entry adds
+lifecycle, revision, request generation, the original sections, copy/edit observations,
+and feedback state.
 
 Evidence: `src/ai-summary.ts`, `src/storeEventsWrapper.ts`, `src/store.types.ts`,
 `src/task-utils.ts`; tests: `tests/ai-summary.ts`, the AI summary cases in

@@ -327,7 +327,7 @@ interface IStore {
   legacyAgentState: string;
   legacyAuxCodeId: string;
 
-aiSummaries: Record<string, Partial<Record<AISummaryRole, AISummaryEntry>>>;
+  aiSummaries: Record<string, Partial<Record<AISummaryRole, AISummaryEntry>>>;
   init(params: InitParams, callback: (ccSDK: IContactCenter) => void): Promise<void>;
   registerCC(webex?: WithWebex['webex']): Promise<void>;
   loadWellbeingBreakIdleCode(): Promise<void>;
@@ -381,7 +381,7 @@ interface IStoreWrapper extends IStore {
   submitBehavioralMetric(metric: WidgetsBehavioralMetric): void;
   resetWellnessSession(): void;
 
-requestMidCallSummary(action: AISummaryAction, task?: ITask): Promise<void>;
+  requestMidCallSummary(action: AISummaryAction, task?: ITask): Promise<void>;
   requestPostCallSummary(task?: ITask): Promise<void>;
   editAISummary(
     role: AISummaryRole,
@@ -404,7 +404,7 @@ requestMidCallSummary(action: AISummaryAction, task?: ITask): Promise<void>;
   ): Promise<void>;
   sendMidCallSummaryResponse(action: AISummaryAction, task?: ITask): Promise<void>;
   getPostCallSummaryResponse(wrapUpCode: string, task?: ITask): AISummaryResponse | undefined;
-  sendPostCallSummaryResponse(response: AISummaryResponse, task?: ITask): Promise<'submitted' | 'response-failed'>;
+  sendPostCallSummaryResponse(response: AISummaryResponse, task: ITask): Promise<'submitted' | 'response-failed'>;
   onAISummaryStatusChange(listener: (detail: AISummaryStatusDetail) => void): () => void;
 }
 
@@ -559,8 +559,6 @@ export type {
   WidgetsBehavioralMetric,
   WidgetsBehavioralMetricAgent,
   WidgetsBehavioralMetricVerb,
-
-AISummary,
   AISummaryAction,
   AISummaryFeedback,
   AISummaryResponse,
@@ -699,14 +697,18 @@ export type AISummaryEntry = {
   /** Lifecycle of the latest request, or of the pushed receiver summary. */
   status: 'loading' | 'ready' | 'error';
   /**
-   * The SDK summary fields this role renders: the adaptive card for the receiving agent, otherwise sections (with
-   * the post-call resolution) or `summaryText`. Kept while a newer request loads or after it fails.
+   * The SDK summary fields this role renders: receiver card with SDK text retained for feedback, otherwise sections
+   * (with the post-call resolution) or `summaryText`. Kept while a newer request loads or after it fails.
    */
   content?: Pick<AISummary, 'adaptiveCard' | 'sections' | 'resolution' | 'summaryText'>;
+  /** Received sections, used to send only changed values in the response. */
+  originalSections?: AISummarySections;
   /** Why the latest request failed; `unsupported` when the payload had nothing this role can render. */
   error?: 'failed' | 'unsupported';
   /** Bumped when a new summary arrives, so edits, copies and feedback apply to the summary that was shown. */
   revision: number;
+  /** Identifies the latest request independently of edits to the displayed content. */
+  requestGeneration?: number;
   copied: number;
   edited: boolean;
   feedback: AISummaryFeedback;

@@ -32,11 +32,8 @@ import {
   WellnessBreakState,
   WidgetsBehavioralMetric,
   WELLNESS_BREAK_NOTIFICATION_ACTIONS,
-
-AISummaryEntry,
-  AISummaryRole,
-  AISummaryStatusDetail,
 } from './store.types';
+import type {AISummaryEntry, AISummaryRole, AISummaryStatusDetail} from './store.types';
 import Store from './store';
 import type {
   AISummary,
@@ -56,8 +53,7 @@ import {runInAction} from 'mobx';
 import {isAISummaryEnabled, isIncomingTask, isSecondaryAgent} from './task-utils';
 import {SUGGESTED_RESPONSE_EVENT, TASK_MULTI_LOGIN_HYDRATE} from './constants';
 import {
-  composeMidCallResponse,
-  composePostCallResponse,
+  composeAISummaryResponse,
   editAISummaryContent,
   newAISummaryEntry,
   normalizeAISummaryPayload,
@@ -106,8 +102,9 @@ class StoreWrapper implements IStoreWrapper {
   private taskEndListeners: Record<string, {task: ITask; listener: () => void}> = {};
   private muteStateByInteractionId: Record<string, boolean> = {};
   // Keyed by interactionId, rebound when task:hydrate / task:merged supplies a replacement task object.
-  private aiSummaryReceivedListeners: Record<string, {task: ITask; listener: (payload: unknown) => void}> = {};
+  private aiSummaryReceivedListeners: Record<string, {task: ITask; listener: (payload: AISummary) => void}> = {};
   private aiSummaryStatusListeners = new Set<(detail: AISummaryStatusDetail) => void>();
+  private aiSummaryRequestGeneration = 0;
 
   constructor() {
     this.store = Store.getInstance();
@@ -485,10 +482,8 @@ class StoreWrapper implements IStoreWrapper {
     });
   };
 
-// AI summaries live at aiSummaries[interactionId][role], like realTimeAssist. Requests are plain awaits: the
-  // SDK correlates each reply, times out after 15s, and never settles a request that a newer one replaced. A
-  // settlement therefore applies only while its entry is still loading, which also drops it once the task has
-  // been removed and its entries cleared.
+  // The SDK correlates replies; the store also guards settlements so an older request cannot replace
+  // a newer request's UI state, including when its send acknowledgement fails after replacement.
 
   private getAISummaryEntry(role: AISummaryRole, task?: ITask): AISummaryEntry | undefined {
     const interactionId = task?.data?.interactionId;
@@ -535,6 +530,7 @@ class StoreWrapper implements IStoreWrapper {
         ...newAISummaryEntry(),
         status: 'ready',
         content: result,
+        originalSections: result.sections ? {...result.sections} : undefined,
         revision: entry.revision + 1,
         action: action ?? entry.action,
       });
@@ -554,45 +550,39 @@ class StoreWrapper implements IStoreWrapper {
     }
   }
 
-  private async requestAISummary(
-    role: AISummaryRole,
-    task: ITask,
-    request: () => Promise<AISummary>,
-    action?: AISummaryAction
-  ): Promise<void> {
-    const interactionId = task?.data?.interactionId;
+  private async requestAISummary(task: ITask, action?: AISummaryAction): Promise<void> {
+    if (!isAISummaryEnabled(task, action ? 'midCallEnabled' : 'postCallEnabled')) {
+      return;
+    }
+    const interactionId = task.data?.interactionId;
     if (!interactionId) {
       return;
     }
+    const role = action ? 'initiator' : 'post-call';
     const entry = this.getAISummaryEntry(role, task) ?? newAISummaryEntry();
-    this.setAISummaryEntry(interactionId, role, {...entry, status: 'loading'});
+    const requestGeneration = ++this.aiSummaryRequestGeneration;
+    this.setAISummaryEntry(interactionId, role, {...entry, status: 'loading', requestGeneration});
 
     let result: ReturnType<typeof normalizeAISummaryPayload>;
     try {
-      result = normalizeAISummaryPayload(await request(), role);
+      const payload = await (action ? task.requestMidCallSummary(action) : task.requestPostCallSummary());
+      result = normalizeAISummaryPayload(payload, role);
     } catch (error) {
       this.logAISummaryFailure('request', error);
       result = 'failed';
     }
-    if (this.getAISummaryEntry(role, task)?.status === 'loading') {
+    if (this.getAISummaryEntry(role, task)?.requestGeneration === requestGeneration) {
       this.applyAISummaryResult(interactionId, role, result, action);
     }
   }
 
-  requestMidCallSummary = async (action: AISummaryAction, task: ITask = this.currentTask): Promise<void> => {
-    if (isAISummaryEnabled(task, 'midCallEnabled')) {
-      await this.requestAISummary('initiator', task, () => task.requestMidCallSummary(action), action);
-    }
-  };
+  requestMidCallSummary = (action: AISummaryAction, task: ITask = this.currentTask): Promise<void> =>
+    this.requestAISummary(task, action);
 
-  requestPostCallSummary = async (task: ITask = this.currentTask): Promise<void> => {
-    if (isAISummaryEnabled(task, 'postCallEnabled')) {
-      await this.requestAISummary('post-call', task, () => task.requestPostCallSummary());
-    }
-  };
+  requestPostCallSummary = (task: ITask = this.currentTask): Promise<void> => this.requestAISummary(task);
 
   // The receiving agent's summary is pushed by the backend whether or not this agent has the feature enabled.
-  private handleAISummaryReceived = (task: ITask, payload: unknown): void => {
+  private handleAISummaryReceived = (task: ITask, payload: AISummary): void => {
     const interactionId = task.data?.interactionId;
     if (interactionId) {
       const action = isSecondaryAgent(task) ? 'CONSULT' : 'TRANSFER';
@@ -656,7 +646,7 @@ class StoreWrapper implements IStoreWrapper {
 
     let sent = true;
     try {
-      await task.sendMidCallSummaryResponse(composeMidCallResponse({...entry, feedback}), entry.action);
+      await task.sendMidCallSummaryResponse(composeAISummaryResponse({...entry, feedback}), entry.action);
     } catch (error) {
       sent = false;
       this.logAISummaryFailure('feedback', error);
@@ -682,7 +672,10 @@ class StoreWrapper implements IStoreWrapper {
       return;
     }
     try {
-      await task.sendMidCallSummaryResponse(composeMidCallResponse(this.getAISummaryEntry('initiator', task)), action);
+      await task.sendMidCallSummaryResponse(
+        composeAISummaryResponse(this.getAISummaryEntry('initiator', task)),
+        action
+      );
     } catch (error) {
       this.logAISummaryFailure('response', error);
     }
@@ -694,13 +687,13 @@ class StoreWrapper implements IStoreWrapper {
    */
   getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined =>
     isAISummaryEnabled(task, 'postCallEnabled')
-      ? composePostCallResponse(this.getAISummaryEntry('post-call', task), wrapUpCode)
+      ? composeAISummaryResponse(this.getAISummaryEntry('post-call', task), wrapUpCode)
       : undefined;
 
-  /** Sends the final post-call response once; it is never retried. */
+  /** Sends once using the original task captured before wrap-up, even after currentTask changes. */
   sendPostCallSummaryResponse = async (
     response: AISummaryResponse,
-    task: ITask = this.currentTask
+    task: ITask
   ): Promise<'submitted' | 'response-failed'> => {
     let outcome: 'submitted' | 'response-failed' = 'submitted';
     try {
@@ -1137,10 +1130,10 @@ class StoreWrapper implements IStoreWrapper {
         (listenerTask ?? taskToRemove).off(SUGGESTED_RESPONSE_EVENT, listener);
         delete this.realTimeAssistListeners[taskId];
       }
-      taskToRemove.off(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
       if (taskId && this.aiSummaryReceivedListeners[taskId]) {
         const {task: listenerTask, listener} = this.aiSummaryReceivedListeners[taskId];
-        (listenerTask ?? taskToRemove).off(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, listener);
+        listenerTask.off(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, listener);
+        listenerTask.off(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
         delete this.aiSummaryReceivedListeners[taskId];
       }
       if (taskId && this.store.realTimeAssist && this.store.realTimeAssist[taskId]) {
@@ -1620,9 +1613,6 @@ class StoreWrapper implements IStoreWrapper {
     task.on(TASK_EVENTS.TASK_CAMPAIGN_PREVIEW_RESERVATION, this.handleCampaignPreviewReservation);
     task.on(TASK_EVENTS.TASK_CAMPAIGN_CONTACT_UPDATED, this.refreshTaskList);
 
-    // The SDK updates task.aiSummaryCapabilities before emitting; refresh so widgets read the new flags.
-    task.on(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
-
     if (taskId) {
       const existingMute = this.wxAppMuteStateListeners[taskId];
       if (existingMute?.task !== task) {
@@ -1657,10 +1647,13 @@ class StoreWrapper implements IStoreWrapper {
       }
       const existingSummary = this.aiSummaryReceivedListeners[taskId];
       if (existingSummary?.task !== task) {
-        existingSummary?.task?.off(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, existingSummary.listener);
-        const listener = (payload: unknown) => this.handleAISummaryReceived(task, payload);
+        existingSummary?.task.off(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, existingSummary.listener);
+        existingSummary?.task.off(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
+        const listener = (payload: AISummary) => this.handleAISummaryReceived(task, payload);
         this.aiSummaryReceivedListeners[taskId] = {task, listener};
         task.on(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, listener);
+        // The SDK updates capabilities before emitting; refresh so widgets read the new flags.
+        task.on(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
       }
     }
   };
@@ -2035,8 +2028,9 @@ class StoreWrapper implements IStoreWrapper {
       this.realTimeAssistListeners = {};
       this.resetWellnessSession();
 
-Object.values(this.aiSummaryReceivedListeners).forEach(({task, listener}) => {
+      Object.values(this.aiSummaryReceivedListeners).forEach(({task, listener}) => {
         task.off(TASK_EVENTS.TASK_MID_CALL_SUMMARY_RECEIVED, listener);
+        task.off(TASK_EVENTS.TASK_FEATURE_ENABLEMENT, this.refreshTaskList);
       });
       this.aiSummaryReceivedListeners = {};
       this.store.aiSummaries = {};

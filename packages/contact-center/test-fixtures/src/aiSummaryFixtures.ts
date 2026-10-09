@@ -42,7 +42,7 @@ const receivingMidCall = {
     timestamp: 2100,
     languageCode: 'en-US',
     areTranscriptsAvailable: true,
-    summaryText: 'Receiver text must be ignored when a card is present.',
+    summaryText: 'Transferred billing inquiry: invoice correction needed.',
     sections: {
       reasonForTransferOrConsult: 'Receiver typed sections must be ignored.',
       additionalContext: 'Receiver additional context must be ignored.',
