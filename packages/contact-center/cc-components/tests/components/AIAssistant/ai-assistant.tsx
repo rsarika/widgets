@@ -106,6 +106,7 @@ const createReceiverSummary = (overrides: Partial<ReceiverSummaryContent> = {}):
   surface: 'content',
   branchKey: 'interaction-1:agent-1:1',
   content: {
+    conversationId: 'interaction-1',
     adaptiveCard: {type: 'AdaptiveCard', version: '1.5', body: [{type: 'TextBlock', text: 'Receiver summary'}]},
   },
   contentRevision: 3,
@@ -470,6 +471,7 @@ describe('AIAssistantComponent', () => {
   it('applies automatic direction to mixed-direction receiver summary content only', async () => {
     const receiverSummary = createReceiverSummary({
       content: {
+        conversationId: 'interaction-1',
         adaptiveCard: {
           type: 'AdaptiveCard',
           version: '1.5',
@@ -525,6 +527,7 @@ describe('AIAssistantComponent', () => {
     });
     const receiverSummary = createReceiverSummary({
       content: {
+        conversationId: 'interaction-1',
         adaptiveCard: {
           type: 'AdaptiveCard',
           version: '1.5',
@@ -615,6 +618,7 @@ describe('AIAssistantComponent', () => {
       branchKey: receiverSummary.branchKey,
       contentRevision: receiverSummary.contentRevision + 1,
       content: {
+        conversationId: 'interaction-1',
         adaptiveCard: {
           type: 'AdaptiveCard',
           mockFallback: true,
@@ -684,6 +688,7 @@ describe('AIAssistantComponent', () => {
           createReceiverSummary({
             contentRevision: receiverSummary.contentRevision + 1,
             content: {
+              conversationId: 'interaction-1',
               adaptiveCard: {
                 type: 'AdaptiveCard',
                 mockDeferredRender: true,

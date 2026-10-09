@@ -48,7 +48,7 @@ Owns Contact Center client-side state and the SDK boundary: initialize/register 
 
 ## Stack
 
-TypeScript 5.6.3, MobX 6.13.5 (`makeAutoObservable`, `observable.ref`, `runInAction`). Consumed in React 18 via `mobx-react-lite` `observer()` in downstream packages (not a dependency of this package itself). SDK dependency `@webex/contact-center` 3.12.0-next.131. Tests: Jest 29 + ts compile (`tsc --project tsconfig.test.json && jest --coverage`). Build target: `dist/index.js` (Webpack). Evidence: `packages/contact-center/store/package.json`.
+TypeScript 5.6.3, MobX 6.13.5 (`makeAutoObservable`, `observable.ref`, `runInAction`). Consumed in React 18 via `mobx-react-lite` `observer()` in downstream packages (not a dependency of this package itself). SDK dependency `@webex/contact-center` 3.12.0-next.148. Tests: Jest 29 + ts compile (`tsc --project tsconfig.test.json && jest --coverage`). Build target: `dist/index.js` (Webpack). Evidence: `packages/contact-center/store/package.json`.
 
 ## Folder / Package Structure
 
@@ -94,7 +94,7 @@ Compatibility notes:
 
 ## Requires (dependencies)
 
-- `@webex/contact-center` SDK (pinned in `package.json` at `3.12.0-next.131`) — the entire CC runtime: `Webex.init()`, `webex.cc.*` methods, the CC/task event stream, agent `Profile`, `webex.credentials.getUserToken()`. Consumed ONLY through the store. Fallback on unavailability: `Store.init()` rejects after a 6000ms timeout (`src/store.ts:140-142`); the wrapper wraps the rejection and invokes `onErrorCallback('Store', err)` (`src/storeEventsWrapper.ts:442-452`).
+- `@webex/contact-center` SDK (pinned in `package.json` at `3.12.0-next.148`) — the entire CC runtime: `Webex.init()`, `webex.cc.*` methods, the CC/task event stream, agent `Profile`, `webex.credentials.getUserToken()`. Consumed ONLY through the store. Fallback on unavailability: `Store.init()` rejects after a 6000ms timeout (`src/store.ts:140-142`); the wrapper wraps the rejection and invokes `onErrorCallback('Store', err)` (`src/storeEventsWrapper.ts:442-452`).
 - `mobx` ^6.13.5 — observable state and `runInAction` for all mutations.
 - Internal: none upstream. The store is the lowest widget-layer dependency (`cc-components → widget packages → store → SDK`); it imports no widget package.
 
@@ -396,6 +396,99 @@ Unit tests are split by source file. `tests/store.ts` covers the singleton defau
 | `STORE-R-029`          | `tests/storeEventsWrapper.ts` (`handleTaskMuteState`, task-switch mute reset)                                                               | none                                                                                                                        |
 | `STORE-R-030`          | `tests/store.ts` (`enableWxBetterTogether` init paths and default)                                                                          | none                                                                                                                        |
 | `STORE-R-031`          | `tests/storeEventsWrapper.ts` ("should remove task callback even when task is absent from store.taskList", legacy string-id fallback cases) | none                                                                                                                        |
+
+## AI summaries
+
+`StoreWrapper` is the SDK boundary for summaries. `aiSummaries[interactionId][role]`
+keeps the SDK summary, SDK response record and request state for `initiator`, `receiver`,
+and `post-call`. Requests, receiver events and actions read these records directly
+and replace them inside `runInAction`. A new result snapshots
+original sections and resets the response's edits, copy count and feedback. Refreshing
+or failing a request retains content already displayed and its response record; task
+removal and logout clear them.
+
+An agent can receive a transferred call and then consult or transfer it again. The
+received card remains in AI Assistant while the initiator summary is used in the
+consult/transfer modal, so their content, copies and feedback stay independent.
+The post-call entry holds the wrap-up summary. Grouping these entries under the task's
+interaction ID lets task cleanup remove them together; entries are created as needed.
+
+- `requestMidCallSummary(action, task)` and `requestPostCallSummary(task)` call the
+  corresponding Task SDK methods when `task.aiSummaryCapabilities` enables that summary
+  kind. Like suggested responses, summary requests and responses check the SDK flags
+  directly, with no additional media-type restriction. The SDK owns transport and request correlation;
+  the store keeps a request generation on the existing entry so an older settlement cannot
+  overwrite a newer request, even when the displayed content is edited during a refresh.
+- `TASK_FEATURE_ENABLEMENT` (`task:featureEnablement`) refreshes the task view after the
+  SDK updates `task.aiSummaryCapabilities`. The current task is refreshed so observers
+  read the latest flags, including enablement arriving after the task and later disabling
+  the feature. The SDK owns the flags; the store adds no capability map or enablement helper.
+  `TASK_MID_CALL_SUMMARY_RECEIVED` supplies the receiver summary. Listeners are rebound
+  together when a task object is replaced, registered once per task object, and detached
+  on task removal and logout.
+- Every role stores the complete SDK `AISummary` in `content`, including sections,
+  summary text, cards and SDK metadata. The store does not filter sections, trim text,
+  choose a display format or reject a received payload because of its format. Components
+  choose what they display and edit from the SDK fields; edits preserve the other fields.
+  `getAISummarySurface` maps the request
+  lifecycle to a display state and respects the SDK's `areTranscriptsAvailable: false`
+  flag as unavailable; an SDK request rejection is a generic error. A failed refresh
+  keeps previously received content visible. Invalid transport payloads belong to the
+  SDK boundary.
+- Edits, copies and feedback carry the displayed revision. Initiator/post-call feedback
+  remains local until the response is sent; receiver feedback is sent immediately and
+  displayed as selected after the SDK confirms it. Each entry stores an SDK
+  `AISummaryResponse` in `response`. Copy and feedback actions update
+  `response.numberOfTimesCopied` and `response.feedback`; consumers read these SDK fields
+  directly. Received summaries start with `DEFAULT` and one view. A shared empty
+  response supplies the required SDK fields when no content has arrived; the SDK does
+  not supply runtime defaults.
+  Requests without received content start with `IGNORED`, including retries; a failed
+  request without content changes the response state to `NOT_RECEIVED`.
+- `editAISummary` updates the SDK content and `response.summary` in the store entry,
+  preserving the other SDK fields and received-section snapshot. It sets
+  `response.numberOfTimesEdited` to one; an unchanged value is a no-op. Each edit, copy
+  and feedback action checks the displayed content and revision before updating its
+  record. Store access, result handling, logging and status notification are inline
+  in the owning request, action or SDK event handler; there are no private wrappers
+  around these operations.
+- Structured responses contain only sections whose values differ from the received
+  snapshot, matching Agent Desktop. Each section edit updates that difference in the
+  stored response; reverting it removes that section while preserving other edits.
+  An unchanged summary sends `{}`; a cleared section sends its key with `''`.
+  Plain-text responses use the current SDK summary text. Receiver responses always use
+  SDK `summaryText`, even when the same payload also contains sections or an adaptive
+  card. Senders forward the SDK response record; receiver feedback sends the selected
+  feedback and commits it to the record after confirmation. The lifecycle selector
+  is exported from `src/storeEventsWrapper.ts` with the other summary operations.
+  There is no separate summary utility module, response composer, payload normalizer
+  or edit helper.
+- `getPostCallSummaryResponse` stores the wrap-up code on the SDK response record and
+  captures that record before wrap-up removes the task. Subsequent store updates replace
+  the record so the captured response remains stable. If no summary entry exists, it
+  returns an ignored response without creating an entry.
+  `sendPostCallSummaryResponse(response, task)` requires that original task to send it
+  afterward, because `currentTask` may already refer to another interaction. It reports
+  `submitted` or `response-failed` through `onAISummaryStatusChange`. Status details contain
+  no summary content.
+
+The integration consumes `AISummary`, `AISummarySections`, `AISummaryResponse`,
+`AISummaryAction`, and `AISummaryFeedback` from `@webex/contact-center`.
+These APIs come from published SDK `3.12.0-next.148`. The store and React sample pin
+that version; the root resolution also selects it for the sample's transitive Webex
+SDK dependency. Three scoped resolutions replace unavailable transitive versions:
+Device `3.12.0-next.55` uses published `next.54`, and Metrics `3.12.0-next.56` uses
+published `next.55`; Mercury `3.12.0-next.62` uses published `next.61`. Remove these
+resolutions once the referenced versions are published. No local SDK archive is used.
+The React sample uses the SDK-supported `User requested logout` reason for page-unload logout.
+`AISummary` is the common incoming payload type; `AISummaryResponse` is the distinct
+feedback payload sent back to the SDK. The store retains both types directly. The UI
+entry adds lifecycle, revision, request generation, original sections, the pending
+receiver-feedback flag and the consult/transfer action. Copy counts, edits and feedback
+use SDK response fields rather than duplicate widget fields.
+
+Evidence: `src/storeEventsWrapper.ts`, `src/store.types.ts`, `src/task-utils.ts`;
+tests: the AI summary cases in `tests/storeEventsWrapper.ts` and `tests/task-utils.ts`.
 
 ## Traceability
 

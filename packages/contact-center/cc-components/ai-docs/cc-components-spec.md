@@ -363,10 +363,17 @@ edits, copy and feedback. Post-call supports Retry and a read-only Outcome from 
 `resolution`; the display labels never become SDK section keys. Receiver summaries
 use copy and feedback actions around a display-only Adaptive Card.
 
+Summary content props retain the store's SDK `AISummary` shape, including the required
+`conversationId`; feedback and lifecycle values are supplied by the widget from the
+store entry. Generating and error states accept absent content so widgets can pass
+the store value directly without constructing an empty SDK payload. Component tests
+use that same SDK shape. Receiver rendering and focus
+handlers live in the assistant component alongside its chrome and summary branch.
+
 CallControl's optional `aiSummary` prop contains the views and request callbacks.
-For eligible voice tasks, opening consult/transfer requests a summary and renders
+For SDK-enabled tasks, opening consult/transfer requests a summary and renders
 destination radios with the summary below the existing results. That layout stays
-stable while the open popover loses summary eligibility; voice tasks without summary
+stable while the open popover loses summary eligibility; tasks without summary
 eligibility retain the existing category buttons, reload control and list layout.
 `WrapUpSummary` shows searchable reasons and the post-call summary. Complete Wrap-Up
 remains available during generation; while completion is pending, summary edits and

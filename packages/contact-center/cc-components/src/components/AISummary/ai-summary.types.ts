@@ -22,7 +22,7 @@ type AISummaryFocusFallbackProps = {
 };
 
 type AISummaryEditableActions = {
-  content: NonNullable<AISummaryEntry['content']>;
+  content?: AISummaryEntry['content'];
   contentRevision: number;
   onEdit: (key: keyof AISummarySections | 'summaryText', value: string, expectedRevision: number) => boolean;
   onCopy: (expectedRevision: number) => boolean;

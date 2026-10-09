@@ -239,7 +239,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     if (props.mode === 'mid-call-receiver') {
       return '';
     }
-    return flattenContentForCopy(props.content);
+    return props.content ? flattenContentForCopy(props.content) : '';
   };
 
   const handleFocusCapture = (event: React.FocusEvent<HTMLDivElement>) => {
@@ -340,7 +340,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
   };
 
   const renderContent = () => {
-    if (props.state !== 'content' || props.mode === 'mid-call-receiver') {
+    if (props.state !== 'content' || props.mode === 'mid-call-receiver' || !props.content) {
       return null;
     }
     if (!props.content.sections) {

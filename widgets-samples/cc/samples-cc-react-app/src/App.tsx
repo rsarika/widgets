@@ -475,9 +475,7 @@ function App() {
         return;
       }
 
-      void store.cc
-        ?.stationLogout({logoutReason: 'Page unload'})
-        .catch(() => undefined);
+      void store.cc?.stationLogout({logoutReason: 'User requested logout'}).catch(() => undefined);
     };
 
     window.addEventListener('pagehide', handlePageHide);

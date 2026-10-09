@@ -12,6 +12,7 @@ type AISummaryContent = NonNullable<AISummaryEntry['content']>;
 import {COPIED_FEEDBACK_MS} from '../../../src/components/AIAssistant/constants';
 
 const sectionContent: AISummaryContent = {
+  conversationId: 'interaction-main-1',
   sections: {
     initialContactReason: 'Customer asked for invoice help.',
     nextSteps: 'Send the updated invoice.',
@@ -20,6 +21,7 @@ const sectionContent: AISummaryContent = {
 };
 
 const textContent: AISummaryContent = {
+  conversationId: 'interaction-main-1',
   summaryText: 'Customer asked for invoice help.',
 };
 
@@ -131,7 +133,7 @@ const receiverCardContentIsRejected: React.ComponentProps<typeof AISummaryCompon
   mode: 'mid-call-receiver',
   state: 'content',
   contentRevision: 1,
-  content: {adaptiveCard: {type: 'AdaptiveCard'}},
+  content: {conversationId: 'interaction-main-1', adaptiveCard: {type: 'AdaptiveCard'}},
   getReceiverCopyText: () => 'Receiver text',
   onCopy: () => true,
   onFeedback: async () => ({outcome: 'confirmed'}),
@@ -212,7 +214,6 @@ describe('AISummary', () => {
       <AISummary
         mode="post-call"
         state="generating"
-        content={textContent}
         contentRevision={1}
         onEdit={jest.fn()}
         onCopy={jest.fn()}
@@ -233,7 +234,6 @@ describe('AISummary', () => {
       <AISummary
         mode="post-call"
         state="generic-error"
-        content={textContent}
         contentRevision={1}
         onEdit={jest.fn()}
         onCopy={jest.fn()}
@@ -556,6 +556,7 @@ describe('AISummary', () => {
 
   it('applies automatic direction to mixed-direction structured summary text boundaries', () => {
     const bidiContent: AISummaryContent = {
+      conversationId: 'interaction-main-1',
       sections: {
         initialContactReason: 'שלום ticket 42',
         keyActionsTaken: '• اتصل بالعميل\n- Send invoice INV-42',
@@ -609,6 +610,7 @@ describe('AISummary', () => {
 
   it('projects every post-call display section in canonical order and appends Outcome when needed', () => {
     const completeContent: AISummaryContent = {
+      conversationId: 'interaction-main-1',
       sections: {
         initialContactReason: 'Summary value',
         additionalContactReasons: 'Billing help',
@@ -634,6 +636,7 @@ describe('AISummary', () => {
     );
     expect(
       getDisplaySections({
+        conversationId: 'interaction-main-1',
         sections: {
           initialContactReason: 'Only summary',
           keyActionsTaken: 'Already before resolution',
@@ -643,6 +646,7 @@ describe('AISummary', () => {
     ).toEqual(['initialContactReason', 'keyActionsTaken', 'resolution']);
     expect(
       getDisplaySections({
+        conversationId: 'interaction-main-1',
         sections: {nextSteps: 'Last ordered section'},
         resolution: 'Inserted resolution',
       }).map((section) => section.key)
@@ -651,6 +655,7 @@ describe('AISummary', () => {
 
   it('renders injected labels and values as text without live-region announcements', () => {
     const maliciousContent: AISummaryContent = {
+      conversationId: 'interaction-main-1',
       sections: {
         initialContactReason: '<script>alert("summary")</script>',
         nextSteps: '<b onclick=alert(2)>Follow up</b>',
@@ -887,7 +892,7 @@ describe('AISummary', () => {
       <AISummary
         mode="post-call"
         state="content"
-        content={{summaryText: ' \n\t '}}
+        content={{conversationId: 'interaction-main-1', summaryText: ' \n\t '}}
         contentRevision={18}
         onEdit={jest.fn()}
         onCopy={onCopy}
@@ -908,6 +913,7 @@ describe('AISummary', () => {
         mode="post-call"
         state="content"
         content={{
+          conversationId: 'interaction-main-1',
           sections: {initialContactReason: ' '},
           resolution: '',
         }}
@@ -966,7 +972,7 @@ describe('AISummary', () => {
       <AISummary
         mode="post-call"
         state="content"
-        content={{summaryText: 'Replacement summary'}}
+        content={{conversationId: 'interaction-main-1', summaryText: 'Replacement summary'}}
         contentRevision={22}
         onEdit={jest.fn()}
         onCopy={onCopy}
@@ -1290,6 +1296,7 @@ describe('AISummary', () => {
   it('moves focus to a successor when one focused control is removed, then falls back to the panel', async () => {
     const panelRef = React.createRef<HTMLDivElement>();
     const firstContent: AISummaryContent = {
+      conversationId: 'interaction-main-1',
       sections: {
         initialContactReason: 'Summary value',
         nextSteps: 'Follow-up value',
@@ -1327,6 +1334,7 @@ describe('AISummary', () => {
           mode="post-call"
           state="content"
           content={{
+            conversationId: 'interaction-main-1',
             sections: {nextSteps: 'Follow-up value'},
           }}
           contentRevision={52}
@@ -1360,6 +1368,7 @@ describe('AISummary', () => {
           mode="post-call"
           state="unavailable"
           content={{
+            conversationId: 'interaction-main-1',
             sections: {nextSteps: 'Follow-up value'},
           }}
           contentRevision={53}
@@ -1399,7 +1408,7 @@ describe('AISummary', () => {
       <AISummary
         mode="post-call"
         state="content"
-        content={{summaryText: 'Updated while focus remains on Like.'}}
+        content={{conversationId: 'interaction-main-1', summaryText: 'Updated while focus remains on Like.'}}
         contentRevision={55}
         selectedFeedback="thumbs_up"
         onEdit={jest.fn()}
