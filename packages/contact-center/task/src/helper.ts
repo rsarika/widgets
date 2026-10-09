@@ -34,7 +34,6 @@ import store, {
   AISummaryRole,
   AISummarySections,
   getAISummarySurface,
-  isAISummaryEnabled,
 } from '@webex/cc-store';
 import {shouldShowWxAppTelephonyControls} from '@webex/cc-components';
 import {
@@ -506,8 +505,8 @@ export const useIncomingTask = (props: UseTaskProps) => {
  * Undefined when the SDK reports both as disabled for the task.
  */
 export const getAISummaryProps = (currentTask?: ITask): CallControlAISummaryProps | undefined => {
-  const midCallEnabled = isAISummaryEnabled(currentTask, 'midCallEnabled');
-  const postCallEnabled = isAISummaryEnabled(currentTask, 'postCallEnabled');
+  const midCallEnabled = currentTask?.aiSummaryCapabilities?.midCallEnabled;
+  const postCallEnabled = currentTask?.aiSummaryCapabilities?.postCallEnabled;
   if (!midCallEnabled && !postCallEnabled) {
     return undefined;
   }
@@ -517,9 +516,9 @@ export const getAISummaryProps = (currentTask?: ITask): CallControlAISummaryProp
     const entry = entries?.[role];
     return {
       state: getAISummarySurface(entry),
-      content: entry?.content ?? {},
+      content: entry?.content,
       contentRevision: entry?.revision ?? 0,
-      selectedFeedback: entry?.feedback ?? 'none',
+      selectedFeedback: entry?.response.feedback ?? 'none',
       requestPending: entry?.status === 'loading',
       onEdit: (key: keyof AISummarySections | 'summaryText', value: string, expectedRevision: number) =>
         store.editAISummary(role, key, value, expectedRevision, currentTask),

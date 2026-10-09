@@ -151,6 +151,13 @@ describe('widget-cc-call-control AI summary status property', () => {
       'on-close',
       'on-full-screen-toggle',
       'on-real-time-assist-received',
+      'on-wellness-break-offered',
+      'on-wellness-break-accepted',
+      'on-wellness-break-started',
+      'on-wellness-break-ended',
+      'on-wellness-break-error',
+      'wellness-audio-url',
+      'wellness-break-overlay-target',
       'class-name',
     ]);
   });

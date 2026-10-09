@@ -76,7 +76,7 @@ describe('CallControlComponent', () => {
 
   const createMidCallSummary = (revision = 4) => ({
     state: 'content' as const,
-    content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
+    content: {conversationId: 'interaction-main-1', summaryText: 'Customer needs billing support.'},
     contentRevision: revision,
     selectedFeedback: 'none' as const,
     onEdit: jest.fn(),
@@ -86,7 +86,7 @@ describe('CallControlComponent', () => {
 
   const createPostCallSummary = (overrides = {}) => ({
     state: 'generating' as const,
-    content: {type: 'text' as const, summaryText: ''},
+    content: {conversationId: 'interaction-main-1', summaryText: ''},
     contentRevision: 0,
     selectedFeedback: 'none' as const,
     requestPending: true,
@@ -262,7 +262,7 @@ describe('CallControlComponent', () => {
           aiSummary={{
             postCall: createPostCallSummary({
               state: 'content',
-              content: {type: 'text', summaryText: 'Customer issue was resolved.'},
+              content: {conversationId: 'interaction-main-1', summaryText: 'Customer issue was resolved.'},
               contentRevision: 5,
               requestPending: false,
             }),
@@ -334,7 +334,7 @@ describe('CallControlComponent', () => {
       const wrapupCall = jest.fn().mockResolvedValue(true);
       const retainedPostCallSummary = createPostCallSummary({
         state: 'content',
-        content: {type: 'text', summaryText: 'Edited draft kept by store.'},
+        content: {conversationId: 'interaction-main-1', summaryText: 'Edited draft kept by store.'},
         contentRevision: 8,
         requestPending: false,
       });
@@ -402,7 +402,7 @@ describe('CallControlComponent', () => {
           aiSummary={{
             postCall: createPostCallSummary({
               state: 'content',
-              content: {type: 'text', summaryText: 'Customer issue was resolved.'},
+              content: {conversationId: 'interaction-main-1', summaryText: 'Customer issue was resolved.'},
               contentRevision: 5,
               requestPending: false,
             }),
@@ -777,7 +777,7 @@ describe('CallControlComponent', () => {
           aiSummary={{
             midCall: {
               state: 'omitted',
-              content: {type: 'text', summaryText: ''},
+              content: {conversationId: 'interaction-main-1', summaryText: ''},
               contentRevision: 0,
               selectedFeedback: 'none',
               onEdit: jest.fn(),

@@ -30,7 +30,7 @@ jest.mock('@webex/cc-store', () => {
 
   return {
     __esModule: true,
-    getAISummarySurface: jest.requireActual('../../../store/src/ai-summary').getAISummarySurface,
+    getAISummarySurface: jest.requireActual('@webex/cc-store').getAISummarySurface,
     default: observable.object(storeMock, {
       cc: observable.ref,
       currentTask: observable.ref,
@@ -69,11 +69,17 @@ const storeMock = store as unknown as StoreMock;
 const receiverEntry = (overrides: Partial<AISummaryEntry> = {}): AISummaryEntry => ({
   status: 'ready',
   revision: 7,
-  copied: 0,
-  edited: false,
-  feedback: 'none',
+  response: {
+    summary: 'Receiver summary',
+    feedback: 'none',
+    state: 'DEFAULT',
+    numberOfTimesViewed: 1,
+    numberOfTimesEdited: 0,
+    numberOfTimesCopied: 0,
+  },
   action: 'TRANSFER',
   content: {
+    conversationId: 'interaction-1',
     adaptiveCard: {
       type: 'AdaptiveCard',
       version: '1.5',
@@ -82,9 +88,6 @@ const receiverEntry = (overrides: Partial<AISummaryEntry> = {}): AISummaryEntry 
   },
   ...overrides,
 });
-
-const receiverErrorEntry = (error: AISummaryEntry['error']): AISummaryEntry =>
-  receiverEntry({status: 'error', error, content: undefined});
 
 const setReceiverEntry = (receiver?: AISummaryEntry): void => {
   runInAction(() => {
@@ -185,13 +188,13 @@ describe('AIAssistant widget', () => {
   });
 
   it('re-renders the receiver summary branch when the observable surface changes', async () => {
-    setReceiverEntry(receiverErrorEntry('unsupported'));
+    setReceiverEntry(receiverEntry({content: {conversationId: 'interaction-1', areTranscriptsAvailable: false}}));
     render(<AIAssistant />);
 
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
     expect(screen.getByTestId('ai-summary:unavailable')).toBeInTheDocument();
 
-    setReceiverEntry(receiverErrorEntry('failed'));
+    setReceiverEntry(receiverEntry({status: 'error', content: undefined}));
 
     await waitFor(() => expect(screen.getByTestId('ai-summary:error')).toBeInTheDocument());
     expect(screen.queryByTestId('ai-summary:unavailable')).not.toBeInTheDocument();
@@ -262,7 +265,9 @@ describe('AIAssistant widget', () => {
     expect(like).toHaveAttribute('aria-pressed', 'false');
 
     feedbackSend.resolve();
-    setReceiverEntry(receiverEntry({feedback: 'thumbs_up'}));
+    const confirmed = receiverEntry();
+    confirmed.response.feedback = 'thumbs_up';
+    setReceiverEntry(confirmed);
 
     await waitFor(() =>
       expect(screen.getByRole('button', {name: 'This is helpful'})).toHaveAttribute('aria-pressed', 'true')

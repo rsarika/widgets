@@ -31,6 +31,13 @@ import {
   WellnessBreakEvent,
   RespondToWellnessBreakParams,
 } from '@webex/contact-center';
+import type {
+  AISummary,
+  AISummaryAction,
+  AISummaryFeedback,
+  AISummaryResponse,
+  AISummarySections,
+} from '@webex/contact-center';
 import type {RealTimeAssistanceParams} from 'node_modules/@webex/contact-center/dist/types/types';
 import {
   OutdialAniEntriesResponse,
@@ -319,6 +326,8 @@ interface IStore {
   wellnessEventSequence: number;
   legacyAgentState: string;
   legacyAuxCodeId: string;
+
+  aiSummaries: Record<string, Partial<Record<AISummaryRole, AISummaryEntry>>>;
   init(params: InitParams, callback: (ccSDK: IContactCenter) => void): Promise<void>;
   registerCC(webex?: WithWebex['webex']): Promise<void>;
   loadWellbeingBreakIdleCode(): Promise<void>;
@@ -371,6 +380,32 @@ interface IStoreWrapper extends IStore {
   setWellnessBreakState(state: WellnessBreakState): void;
   submitBehavioralMetric(metric: WidgetsBehavioralMetric): void;
   resetWellnessSession(): void;
+
+  requestMidCallSummary(action: AISummaryAction, task?: ITask): Promise<void>;
+  requestPostCallSummary(task?: ITask): Promise<void>;
+  editAISummary(
+    role: AISummaryRole,
+    key: keyof AISummarySections | 'summaryText',
+    value: string,
+    expectedRevision: number,
+    task?: ITask
+  ): boolean;
+  recordAISummaryCopied(role: AISummaryRole, expectedRevision: number, task?: ITask): boolean;
+  setAISummaryFeedback(
+    role: Exclude<AISummaryRole, 'receiver'>,
+    feedback: Exclude<AISummaryFeedback, 'none'>,
+    expectedRevision: number,
+    task?: ITask
+  ): boolean;
+  setReceiverSummaryFeedback(
+    feedback: Exclude<AISummaryFeedback, 'none'>,
+    expectedRevision: number,
+    task?: ITask
+  ): Promise<void>;
+  sendMidCallSummaryResponse(action: AISummaryAction, task?: ITask): Promise<void>;
+  getPostCallSummaryResponse(wrapUpCode: string, task?: ITask): AISummaryResponse | undefined;
+  sendPostCallSummaryResponse(response: AISummaryResponse, task: ITask): Promise<'submitted' | 'response-failed'>;
+  onAISummaryStatusChange(listener: (detail: AISummaryStatusDetail) => void): () => void;
 }
 
 interface IWrapupCode {
@@ -524,6 +559,10 @@ export type {
   WidgetsBehavioralMetric,
   WidgetsBehavioralMetricAgent,
   WidgetsBehavioralMetricVerb,
+  AISummaryAction,
+  AISummaryFeedback,
+  AISummaryResponse,
+  AISummarySections,
 };
 
 export {
@@ -649,3 +688,33 @@ export const CAMPAIGN_PREVIEW_OUTBOUND_TYPES = ['STANDARD_PREVIEW_CAMPAIGN', 'DI
 
 /** Campaign type values (from callProcessingDetails) that identify a campaign preview task. */
 export const CAMPAIGN_PREVIEW_CAMPAIGN_TYPES = ['preview_standard', 'preview_direct'];
+
+/** The consult/transfer initiator's summary, the receiving agent's summary, or the wrap-up summary. */
+export type AISummaryRole = 'initiator' | 'receiver' | 'post-call';
+
+/** One summary of an interaction, stored at `aiSummaries[interactionId][role]`. */
+export type AISummaryEntry = {
+  /** Lifecycle of the latest request, or of the pushed receiver summary. */
+  status: 'loading' | 'ready' | 'error';
+  /**
+   * The full SDK summary with current edits, retained while a newer request loads or after it fails.
+   */
+  content?: AISummary;
+  /** SDK submission record, updated by store actions and passed to the SDK when sending. */
+  response: AISummaryResponse;
+  /** Received sections, used to remove reverted edits from the SDK response. */
+  originalSections?: AISummarySections;
+  /** Bumped when a new summary arrives, so edits, copies and feedback apply to the summary that was shown. */
+  revision: number;
+  /** Identifies the latest request independently of edits to the displayed content. */
+  requestGeneration?: number;
+  /** The receiving agent's feedback response is being sent. */
+  feedbackPending?: boolean;
+  /** The consult or transfer a mid-call summary was generated for. */
+  action?: AISummaryAction;
+};
+
+/** Content-free summary status reported to the host through `onAISummaryStatusChange`. */
+export type AISummaryStatusDetail =
+  | {kind: 'mid-call'; state: 'available' | 'unavailable'}
+  | {kind: 'post-call'; state: 'available' | 'unavailable' | 'submitted' | 'response-failed'};

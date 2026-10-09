@@ -1,4 +1,6 @@
 import type {
+  AISummaryEntry,
+  AISummaryFeedback,
   ILogger,
   RealTimeAssistPayload,
   WellnessBreakError,
@@ -95,6 +97,22 @@ export type AIAssistantChatEntry =
       realTimeAssist?: RealTimeAssistPayload;
     };
 
+export type AIAssistantReceiverSummary =
+  | {
+      surface: 'content';
+      branchKey: string;
+      content: NonNullable<AISummaryEntry['content']>;
+      contentRevision: number;
+      selectedFeedback: AISummaryFeedback;
+      feedbackPending: boolean;
+      recordReceiverSummaryCopied: (expectedRevision: number) => boolean;
+      setReceiverSummaryFeedback: (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) => void;
+    }
+  | {
+      surface: 'unavailable' | 'generic-error';
+      branchKey: string;
+    };
+
 /** Props for the top-level AIAssistant presentational component. */
 export interface AIAssistantComponentProps {
   /** Current chrome visibility state. */
@@ -119,6 +137,8 @@ export interface AIAssistantComponentProps {
   agentName?: string;
   /** Whether the first real-time assist request has completed successfully. */
   hasInitialRequestSucceeded: boolean;
+  /** Optional receiving-agent summary branch. */
+  receiverSummary?: AIAssistantReceiverSummary;
   /** Transition the chrome to `open`. */
   open: () => void;
   /** Transition the chrome to `closed`; preserves chat state. */
@@ -222,6 +242,8 @@ export interface AIAssistantActionEvent {
 
 export interface AdaptiveCardRendererProps {
   card: unknown;
+  /** Receiver summary revision; resets a failed card when a replacement summary arrives. */
+  contentRevision?: number;
   /** Title already rendered by RealTimeAssist; removes the matching header embedded in backend cards. */
   assistantTitle?: string;
   /** Plain-text fallback rendered when the Adaptive Card cannot be parsed/rendered. */

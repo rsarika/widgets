@@ -301,8 +301,8 @@ export const useAiAssistant = (input: UseAiAssistantInput) => {
 
 /** The receiving agent's consult/transfer summary, pushed by the backend for the task's interaction. */
 export const getReceiverSummary = (task?: ITask): AIAssistantReceiverSummary | undefined => {
-  const interactionId = task?.data?.interactionId;
-  const entry = interactionId ? store.aiSummaries?.[interactionId]?.receiver : undefined;
+  const interactionId = task?.data.interactionId;
+  const entry = interactionId ? store.aiSummaries[interactionId]?.receiver : undefined;
   const surface = getAISummarySurface(entry);
   const branchKey = `mid-call:receiver:${interactionId}`;
   if (surface === 'content' && entry.content.adaptiveCard) {
@@ -311,7 +311,7 @@ export const getReceiverSummary = (task?: ITask): AIAssistantReceiverSummary | u
       branchKey,
       content: entry.content,
       contentRevision: entry.revision,
-      selectedFeedback: entry.feedback,
+      selectedFeedback: entry.response.feedback,
       feedbackPending: Boolean(entry.feedbackPending),
       recordReceiverSummaryCopied: (expectedRevision) =>
         store.recordAISummaryCopied('receiver', expectedRevision, task),

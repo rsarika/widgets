@@ -134,6 +134,38 @@ describe('AdaptiveCardRenderer', () => {
     expect(sourceImage).not.toHaveAttribute('hidden');
   });
 
+  it('resets a receiver summary error when its content revision changes', async () => {
+    jest.requireMock('adaptivecards').AdaptiveCard.mockImplementationOnce(() => ({
+      parse: jest.fn(() => {
+        throw new Error('Malformed card');
+      }),
+      render: jest.fn(),
+      getAllActions: jest.fn(() => []),
+    }));
+    const {rerender} = render(
+      <AdaptiveCardRenderer
+        card={{type: 'AdaptiveCard'}}
+        contentRevision={1}
+        fallbackText="The summary is not available"
+      />
+    );
+
+    expect(await screen.findByTestId('ai-assistant:adaptive-card-fallback')).toHaveTextContent(
+      'The summary is not available'
+    );
+
+    rerender(
+      <AdaptiveCardRenderer
+        card={{type: 'AdaptiveCard', version: '1.5'}}
+        contentRevision={2}
+        fallbackText="The summary is not available"
+      />
+    );
+
+    await waitFor(() => expect(screen.queryByTestId('ai-assistant:adaptive-card-fallback')).not.toBeInTheDocument());
+    expect(await screen.findByLabelText('Like suggestion')).toBeInTheDocument();
+  });
+
   it('uses the bordered quote treatment for customer statements', () => {
     render(<AdaptiveCardRenderer card={{type: 'AdaptiveCard'}} assistantTitle="The customer said:" />);
 

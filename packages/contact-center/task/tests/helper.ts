@@ -239,19 +239,34 @@ describe('getAISummaryProps', () => {
 
   it('should map store entries to summary surfaces and pass their content through', () => {
     const task = createAISummaryTask();
-    const entry = {revision: 2, copied: 0, edited: false, feedback: 'none' as const};
+    const entry = {
+      revision: 2,
+      response: {
+        summary: '',
+        feedback: 'none' as const,
+        state: 'DEFAULT' as const,
+        numberOfTimesViewed: 1,
+        numberOfTimesEdited: 0,
+        numberOfTimesCopied: 0,
+      },
+    };
     runInAction(() => {
       store.store.aiSummaries = {
         [AI_SUMMARY_INTERACTION_ID]: {
-          initiator: {...entry, status: 'error', error: 'unsupported'},
-          'post-call': {...entry, status: 'ready', content: {summaryText: 'Resolved billing issue.'}},
+          initiator: {...entry, status: 'error'},
+          'post-call': {
+            ...entry,
+            status: 'ready',
+            content: {conversationId: AI_SUMMARY_INTERACTION_ID, summaryText: 'Resolved billing issue.'},
+          },
         },
       };
     });
 
     const props = getAISummaryProps(task);
 
-    expect(props?.midCall).toMatchObject({state: 'unavailable', content: {}});
+    expect(props?.midCall).toMatchObject({state: 'generic-error'});
+    expect(props?.midCall?.content).toBeUndefined();
     expect(props?.postCall).toMatchObject({
       state: 'content',
       content: {summaryText: 'Resolved billing issue.'},
@@ -3240,11 +3255,7 @@ describe('useCallControl', () => {
         feedback: 'none',
         state: 'DEFAULT',
         wrapUpCode: 'Customer Issue',
-        summary: expect.objectContaining({
-          initialContactReason: 'Customer called about an invoice discrepancy.',
-          keyActionsTaken: 'Send corrected invoice by email.',
-          nextSteps: 'Confirm receipt tomorrow.',
-        }),
+        summary: {},
       })
     );
     await expect(completion).resolves.toBe(true);

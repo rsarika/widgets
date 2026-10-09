@@ -59,7 +59,7 @@ jest.mock('@webex/cc-components', () => {
 
 jest.mock('@webex/cc-store', () => ({
   __esModule: true,
-  getAISummarySurface: jest.requireActual('../../../store/src/ai-summary').getAISummarySurface,
+  getAISummarySurface: jest.requireActual('@webex/cc-store').getAISummarySurface,
   default: {
     cc: {
       apiAIAssistant: {

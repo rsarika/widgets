@@ -21,6 +21,7 @@ const REASON_GROUP_NAME = AI_SUMMARY_MESSAGES.postCall.chooseReason;
 const createSummary = (overrides: Partial<WrapUpSummaryView> = {}): WrapUpSummaryView => ({
   state: 'content',
   content: {
+    conversationId: 'interaction-main-1',
     sections: {
       initialContactReason: 'Customer asked about billing.',
       keyActionsTaken: 'Send invoice.',
@@ -191,6 +192,7 @@ describe('WrapUpSummary', () => {
     const retainedDraft = createSummary({
       requestPending: true,
       content: {
+        conversationId: 'interaction-main-1',
         sections: {
           initialContactReason: 'Edited summary survives.',
           nextSteps: 'Call back tomorrow.',
@@ -291,6 +293,7 @@ describe('WrapUpSummary', () => {
             reasons={manyReasons}
             summary={createSummary({
               content: {
+                conversationId: 'interaction-main-1',
                 sections: {
                   initialContactReason:
                     'A long retained summary paragraph that wraps inside the bounded content scroll region.',

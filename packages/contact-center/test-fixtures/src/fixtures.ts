@@ -166,6 +166,7 @@ const mockTask = {
   } as unknown as TaskData,
   webCallMap: {},
   autoWrapup: undefined,
+  aiSummaryCapabilities: {midCallEnabled: false, postCallEnabled: false},
   on: jest.fn(),
   off: jest.fn(),
   emit: jest.fn(),

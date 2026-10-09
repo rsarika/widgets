@@ -557,17 +557,21 @@ Tests are split between widget-shell render tests (each `tests/<Widget>/index.ts
 
 `getAISummaryProps` in `src/helper.ts` maps the current task's SDK capabilities and
 store summary entries into optional mid-call and post-call views with store callbacks.
-It supplies no summary props when both capabilities are disabled.
+It reads `task.aiSummaryCapabilities` directly, with no additional media-type filter,
+and supplies no summary props when both capabilities are disabled. Each view receives
+the entry's raw SDK content, which can be absent during generation or failure, and
+confirmed feedback from `entry.response.feedback`.
 
 Opening consult/transfer requests the corresponding mid-call summary. `consultCall`
 and `transferCall` send the initiator response through the store as the existing SDK
 operation starts; they do not wait for summary submission. `wrapupCall` freezes the
 post-call response, awaits the existing Task `wrapup` call, promotes the next task,
 then sends the summary response without waiting. The response's `wrapUpCode` is the
-selected reason name. `wrapupCall` resolves a boolean so the summary UI can retain
-its draft after failure and disable completion while wrap-up is pending. Concurrent
-wrap-up calls for the same active task share one in-flight completion promise, so
-rapid repeated activation cannot submit the same task twice.
+selected reason name. Submission uses the captured Task and SDK response record;
+an unedited structured summary has an empty `summary` object. `wrapupCall` resolves a
+boolean so the summary UI can retain its draft after failure and disable completion
+while wrap-up is pending. Concurrent wrap-up calls for the same active task share one
+in-flight completion promise, so rapid repeated activation cannot submit the same task twice.
 
 CallControl accepts optional `onAISummaryStatusChange`; the outer widget subscribes
 while that callback is present and unsubscribes on replacement or unmount. The exported

@@ -30,7 +30,7 @@ afterAll(() => {
 describe('ConsultTransferPopoverComponent', () => {
   const createSummary = (overrides = {}) => ({
     state: 'content' as const,
-    content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
+    content: {conversationId: 'interaction-main-1', summaryText: 'Customer needs billing support.'},
     contentRevision: 18,
     selectedFeedback: 'none' as const,
     onEdit: jest.fn(),
@@ -702,7 +702,7 @@ describe('ConsultTransferPopoverComponent', () => {
           heading="Consult"
           summary={{
             state: 'content',
-            content: {summaryText: 'Customer needs billing support.'},
+            content: {conversationId: 'interaction-main-1', summaryText: 'Customer needs billing support.'},
             contentRevision: 11,
             selectedFeedback: 'none',
             onEdit: jest.fn(),
@@ -843,7 +843,7 @@ describe('ConsultTransferPopoverComponent', () => {
           action="Transfer"
           summary={{
             state: 'unavailable',
-            content: {summaryText: ''},
+            content: {conversationId: 'interaction-main-1', summaryText: ''},
             contentRevision: 0,
             selectedFeedback: 'none',
             onEdit: jest.fn(),
@@ -860,7 +860,7 @@ describe('ConsultTransferPopoverComponent', () => {
     it('restores focus to the labelled popover root when the summary subtree is removed', async () => {
       const summary = {
         state: 'content' as const,
-        content: {type: 'text' as const, summaryText: 'Customer needs billing support.'},
+        content: {conversationId: 'interaction-main-1', summaryText: 'Customer needs billing support.'},
         contentRevision: 12,
         selectedFeedback: 'none' as const,
         onEdit: jest.fn(),
@@ -889,12 +889,14 @@ describe('ConsultTransferPopoverComponent', () => {
 
     it('moves focus to the next summary control on content replacement and the popover root when controls disappear', async () => {
       const firstContent: NonNullable<AISummaryEntry['content']> = {
+        conversationId: 'interaction-main-1',
         sections: {
           initialContactReason: 'Summary value',
           nextSteps: 'Follow-up value',
         },
       };
       const followUpOnlyContent: NonNullable<AISummaryEntry['content']> = {
+        conversationId: 'interaction-main-1',
         sections: {nextSteps: 'Follow-up value'},
       };
       const view = render(
@@ -941,7 +943,7 @@ describe('ConsultTransferPopoverComponent', () => {
           heading="Consult"
           summary={createSummary({
             state: 'unavailable' as const,
-            content: {type: 'text' as const, summaryText: ''},
+            content: {conversationId: 'interaction-main-1', summaryText: ''},
             contentRevision: 63,
           })}
         />
