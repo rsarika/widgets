@@ -401,7 +401,8 @@ Unit tests are split by source file. `tests/store.ts` covers the singleton defau
 
 `StoreWrapper` is the SDK boundary for summaries. `aiSummaries[interactionId][role]`
 keeps the SDK summary, SDK response record and request state for `initiator`, `receiver`,
-and `post-call`; mutations replace entries inside `runInAction`. A new result snapshots
+and `post-call`. Requests, receiver events and actions read these records directly
+and replace them inside `runInAction`. A new result snapshots
 original sections and resets the response's edits, copy count and feedback. Refreshing
 or failing a request retains content already displayed and its response record; task
 removal and logout clear them.
@@ -446,8 +447,11 @@ interaction ID lets task cleanup remove them together; entries are created as ne
   request without content changes the response state to `NOT_RECEIVED`.
 - `editAISummary` updates the SDK content and `response.summary` in the store entry,
   preserving the other SDK fields and received-section snapshot. It sets
-  `response.numberOfTimesEdited` to one; an unchanged value is a no-op. The store's shared
-  mutation guard checks content and revision before an edit, copy or feedback update.
+  `response.numberOfTimesEdited` to one; an unchanged value is a no-op. Each edit, copy
+  and feedback action checks the displayed content and revision before updating its
+  record. Store access, result handling, logging and status notification are inline
+  in the owning request, action or SDK event handler; there are no private wrappers
+  around these operations.
 - Structured responses contain only sections whose values differ from the received
   snapshot, matching Agent Desktop. Each section edit updates that difference in the
   stored response; reverting it removes that section while preserving other edits.
