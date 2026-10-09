@@ -413,9 +413,9 @@ The post-call entry holds the wrap-up summary. Grouping these entries under the 
 interaction ID lets task cleanup remove them together; entries are created as needed.
 
 - `requestMidCallSummary(action, task)` and `requestPostCallSummary(task)` call the
-  corresponding Task SDK methods only when the task is telephony and its
-  `aiSummaryCapabilities` enables that summary kind. Like suggested responses, summary
-  requests and responses check the SDK flags directly. The SDK owns transport and request correlation;
+  corresponding Task SDK methods when `task.aiSummaryCapabilities` enables that summary
+  kind. Like suggested responses, summary requests and responses check the SDK flags
+  directly, with no additional media-type restriction. The SDK owns transport and request correlation;
   the store keeps a request generation on the existing entry so an older settlement cannot
   overwrite a newer request, even when the displayed content is edited during a refresh.
 - `TASK_FEATURE_ENABLEMENT` (`task:featureEnablement`) refreshes the task view after the

@@ -3990,18 +3990,17 @@ describe('storeEventsWrapper', () => {
         expect(statusListener).not.toHaveBeenCalled();
       });
 
-      it('should skip summary requests and responses for non-telephony tasks', async () => {
+      it('should use SDK summary enablement without filtering the task media type', async () => {
         const task = makeAISummaryTask({mediaType: 'chat'});
 
         await storeWrapper.requestMidCallSummary('CONSULT', task);
         await storeWrapper.requestPostCallSummary(task);
         await storeWrapper.sendMidCallSummaryResponse('CONSULT', task);
 
-        expect(task.requestMidCallSummary).not.toHaveBeenCalled();
-        expect(task.requestPostCallSummary).not.toHaveBeenCalled();
-        expect(task.sendMidCallSummaryResponse).not.toHaveBeenCalled();
-        expect(storeWrapper.getPostCallSummaryResponse('aux-billing', task)).toBeUndefined();
-        expect(storeWrapper.aiSummaries).toEqual({});
+        expect(task.requestMidCallSummary).toHaveBeenCalledWith('CONSULT');
+        expect(task.requestPostCallSummary).toHaveBeenCalledTimes(1);
+        expect(task.sendMidCallSummaryResponse).toHaveBeenCalledWith(entryFor('initiator').response, 'CONSULT');
+        expect(storeWrapper.getPostCallSummaryResponse('aux-billing', task)).toBe(entryFor('post-call').response);
       });
 
       it('should apply only the latest request when the SDK replaces an earlier one', async () => {

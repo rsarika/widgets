@@ -563,10 +563,7 @@ class StoreWrapper implements IStoreWrapper {
   }
 
   private async requestAISummary(task: ITask, action?: AISummaryAction): Promise<void> {
-    if (
-      task?.data?.interaction?.mediaType !== MEDIA_TYPE_TELEPHONY_LOWER ||
-      !task.aiSummaryCapabilities[action ? 'midCallEnabled' : 'postCallEnabled']
-    ) {
+    if (!task?.aiSummaryCapabilities[action ? 'midCallEnabled' : 'postCallEnabled']) {
       return;
     }
     const interactionId = task.data?.interactionId;
@@ -723,10 +720,7 @@ class StoreWrapper implements IStoreWrapper {
    * not wait for it; it never rejects.
    */
   sendMidCallSummaryResponse = async (action: AISummaryAction, task: ITask = this.currentTask): Promise<void> => {
-    if (
-      task?.data?.interaction?.mediaType !== MEDIA_TYPE_TELEPHONY_LOWER ||
-      !task.aiSummaryCapabilities.midCallEnabled
-    ) {
+    if (!task?.aiSummaryCapabilities.midCallEnabled) {
       return;
     }
     try {
@@ -743,10 +737,7 @@ class StoreWrapper implements IStoreWrapper {
    * Stores the wrap-up code and captures the SDK response before wrap-up removes the task and its summary.
    */
   getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined => {
-    if (
-      task?.data?.interaction?.mediaType !== MEDIA_TYPE_TELEPHONY_LOWER ||
-      !task.aiSummaryCapabilities.postCallEnabled
-    ) {
+    if (!task?.aiSummaryCapabilities.postCallEnabled) {
       return undefined;
     }
     const entry = this.getAISummaryEntry('post-call', task);
