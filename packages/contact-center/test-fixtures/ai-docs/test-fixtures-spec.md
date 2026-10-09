@@ -237,8 +237,7 @@ the SDK payload rather than reconstructing it from card labels. The barrel
 re-exports `aiSummaryFixtures`. SDK transport, request ordering and package admission
 fixtures belong to the SDK repository.
 
-Consumers: `store/tests/ai-summary.ts` and the AI summary cases in
-`store/tests/storeEventsWrapper.ts`.
+Consumers: the AI summary and lifecycle selector cases in `store/tests/storeEventsWrapper.ts`.
 
 ## Traceability
 - Repo architecture: [`ARCHITECTURE.md`](../../../../ai-docs/ARCHITECTURE.md) · Registry: [`SPEC_INDEX.md`](../../../../ai-docs/SPEC_INDEX.md)

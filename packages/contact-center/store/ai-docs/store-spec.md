@@ -48,7 +48,7 @@ Owns Contact Center client-side state and the SDK boundary: initialize/register 
 
 ## Stack
 
-TypeScript 5.6.3, MobX 6.13.5 (`makeAutoObservable`, `observable.ref`, `runInAction`). Consumed in React 18 via `mobx-react-lite` `observer()` in downstream packages (not a dependency of this package itself). SDK dependency `@webex/contact-center` 3.12.0-next.131. Tests: Jest 29 + ts compile (`tsc --project tsconfig.test.json && jest --coverage`). Build target: `dist/index.js` (Webpack). Evidence: `packages/contact-center/store/package.json`.
+TypeScript 5.6.3, MobX 6.13.5 (`makeAutoObservable`, `observable.ref`, `runInAction`). Consumed in React 18 via `mobx-react-lite` `observer()` in downstream packages (not a dependency of this package itself). SDK dependency `@webex/contact-center` 3.12.0-next.148. Tests: Jest 29 + ts compile (`tsc --project tsconfig.test.json && jest --coverage`). Build target: `dist/index.js` (Webpack). Evidence: `packages/contact-center/store/package.json`.
 
 ## Folder / Package Structure
 
@@ -94,7 +94,7 @@ Compatibility notes:
 
 ## Requires (dependencies)
 
-- `@webex/contact-center` SDK (pinned in `package.json` at `3.12.0-next.131`) — the entire CC runtime: `Webex.init()`, `webex.cc.*` methods, the CC/task event stream, agent `Profile`, `webex.credentials.getUserToken()`. Consumed ONLY through the store. Fallback on unavailability: `Store.init()` rejects after a 6000ms timeout (`src/store.ts:140-142`); the wrapper wraps the rejection and invokes `onErrorCallback('Store', err)` (`src/storeEventsWrapper.ts:442-452`).
+- `@webex/contact-center` SDK (pinned in `package.json` at `3.12.0-next.148`) — the entire CC runtime: `Webex.init()`, `webex.cc.*` methods, the CC/task event stream, agent `Profile`, `webex.credentials.getUserToken()`. Consumed ONLY through the store. Fallback on unavailability: `Store.init()` rejects after a 6000ms timeout (`src/store.ts:140-142`); the wrapper wraps the rejection and invokes `onErrorCallback('Store', err)` (`src/storeEventsWrapper.ts:442-452`).
 - `mobx` ^6.13.5 — observable state and `runInAction` for all mutations.
 - Internal: none upstream. The store is the lowest widget-layer dependency (`cc-components → widget packages → store → SDK`); it imports no widget package.
 
@@ -459,9 +459,10 @@ interaction ID lets task cleanup remove them together; entries are created as ne
   Plain-text responses use the current SDK summary text. Receiver responses always use
   SDK `summaryText`, even when the same payload also contains sections or an adaptive
   card. Senders forward the SDK response record; receiver feedback sends the selected
-  feedback and commits it to the record after confirmation. `src/ai-summary.ts` contains
-  only the lifecycle selector. There is no response composer, payload normalizer or
-  separate edit helper.
+  feedback and commits it to the record after confirmation. The lifecycle selector
+  is exported from `src/storeEventsWrapper.ts` with the other summary operations.
+  There is no separate summary utility module, response composer, payload normalizer
+  or edit helper.
 - `getPostCallSummaryResponse` stores the wrap-up code on the SDK response record and
   captures that record before wrap-up removes the task. Subsequent store updates replace
   the record so the captured response remains stable. If no summary entry exists, it
@@ -473,17 +474,21 @@ interaction ID lets task cleanup remove them together; entries are created as ne
 
 The integration consumes `AISummary`, `AISummarySections`, `AISummaryResponse`,
 `AISummaryAction`, and `AISummaryFeedback` from `@webex/contact-center`.
-The temporary root resolution uses `vendor/contact-center-cc-summaries.tgz`; release
-requires replacing it with a published SDK version containing these APIs.
+These APIs come from published SDK `3.12.0-next.148`. The store and React sample pin
+that version; the root resolution also selects it for the sample's transitive Webex
+SDK dependency. Three scoped resolutions replace unavailable transitive versions:
+Device `3.12.0-next.55` uses published `next.54`, and Metrics `3.12.0-next.56` uses
+published `next.55`; Mercury `3.12.0-next.62` uses published `next.61`. Remove these
+resolutions once the referenced versions are published. No local SDK archive is used.
+The React sample uses the SDK-supported `User requested logout` reason for page-unload logout.
 `AISummary` is the common incoming payload type; `AISummaryResponse` is the distinct
 feedback payload sent back to the SDK. The store retains both types directly. The UI
 entry adds lifecycle, revision, request generation, original sections, the pending
 receiver-feedback flag and the consult/transfer action. Copy counts, edits and feedback
 use SDK response fields rather than duplicate widget fields.
 
-Evidence: `src/ai-summary.ts`, `src/storeEventsWrapper.ts`, `src/store.types.ts`,
-`src/task-utils.ts`; tests: `tests/ai-summary.ts`, the AI summary cases in
-`tests/storeEventsWrapper.ts`, and `tests/task-utils.ts`.
+Evidence: `src/storeEventsWrapper.ts`, `src/store.types.ts`, `src/task-utils.ts`;
+tests: the AI summary cases in `tests/storeEventsWrapper.ts` and `tests/task-utils.ts`.
 
 ## Traceability
 
