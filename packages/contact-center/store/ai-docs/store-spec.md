@@ -400,10 +400,11 @@ Unit tests are split by source file. `tests/store.ts` covers the singleton defau
 ## AI summaries
 
 `StoreWrapper` is the SDK boundary for summaries. `aiSummaries[interactionId][role]`
-keeps the UI state for `initiator`, `receiver`, and `post-call`; mutations replace entries
-inside `runInAction`. A new result snapshots original sections and resets edits, copy count
-and feedback. Refreshing or failing a request retains content already displayed; task
-removal and logout clear it.
+keeps the SDK summary, SDK response record and request state for `initiator`, `receiver`,
+and `post-call`; mutations replace entries inside `runInAction`. A new result snapshots
+original sections and resets the response's edits, copy count and feedback. Refreshing
+or failing a request retains content already displayed and its response record; task
+removal and logout clear them.
 
 An agent can receive a transferred call and then consult or transfer it again. The
 received card remains in AI Assistant while the initiator summary is used in the
@@ -431,19 +432,30 @@ interaction ID lets task cleanup remove them together; entries are created as ne
   SDK boundary.
 - Edits, copies and feedback carry the displayed revision. Initiator/post-call feedback
   remains local until the response is sent; receiver feedback is sent immediately and
-  displayed as selected after the SDK confirms it.
-- `editAISummary` updates the SDK content in the store entry directly, preserving its
-  other fields and received-section snapshot. An unchanged value is a no-op. The store's
-  shared mutation guard checks content and revision before an edit, copy or feedback update.
+  displayed as selected after the SDK confirms it. Each entry stores an SDK
+  `AISummaryResponse` in `response`. Copy and feedback actions update
+  `response.numberOfTimesCopied` and `response.feedback`; consumers read these SDK fields
+  directly. Received summaries start with `DEFAULT`, one view and `summaryReceived: true`.
+  Requests without received content start with `IGNORED`, including retries; a failed
+  request without content changes the response state to `NOT_RECEIVED`.
+- `editAISummary` updates the SDK content and `response.summary` in the store entry,
+  preserving the other SDK fields and received-section snapshot. It sets
+  `response.numberOfTimesEdited` to one; an unchanged value is a no-op. The store's shared
+  mutation guard checks content and revision before an edit, copy or feedback update.
 - Structured responses contain only sections whose values differ from the received
-  snapshot, matching Agent Desktop. An unchanged summary sends `{}`; a cleared section
-  sends its key with `''`. Plain-text responses use the current SDK summary text.
-  Receiver responses always use SDK `summaryText`, even when the same payload also
-  contains sections or an adaptive card. `src/ai-summary.ts` contains the lifecycle
-  selector and one shared response composer. The composer derives the SDK submission
-  payload from the current entry when sending; no separate response object is kept in
-  the store. There is no payload normalizer or separate edit helper.
-- `getPostCallSummaryResponse` freezes the response before wrap-up removes the task.
+  snapshot, matching Agent Desktop. Each section edit updates that difference in the
+  stored response; reverting it removes that section while preserving other edits.
+  An unchanged summary sends `{}`; a cleared section sends its key with `''`.
+  Plain-text responses use the current SDK summary text. Receiver responses always use
+  SDK `summaryText`, even when the same payload also contains sections or an adaptive
+  card. Senders forward the SDK response record; receiver feedback sends the selected
+  feedback and commits it to the record after confirmation. `src/ai-summary.ts` contains
+  only the lifecycle selector. There is no response composer, payload normalizer or
+  separate edit helper.
+- `getPostCallSummaryResponse` stores the wrap-up code on the SDK response record and
+  captures that record before wrap-up removes the task. Subsequent store updates replace
+  the record so the captured response remains stable. If no summary entry exists, it
+  returns an ignored response without creating an entry.
   `sendPostCallSummaryResponse(response, task)` requires that original task to send it
   afterward, because `currentTask` may already refer to another interaction. It reports
   `submitted` or `response-failed` through `onAISummaryStatusChange`. Status details contain
@@ -454,9 +466,10 @@ The integration consumes `AISummary`, `AISummarySections`, `AISummaryResponse`,
 The temporary root resolution uses `vendor/contact-center-cc-summaries.tgz`; release
 requires replacing it with a published SDK version containing these APIs.
 `AISummary` is the common incoming payload type; `AISummaryResponse` is the distinct
-feedback payload sent back to the SDK. The UI entry adds
-lifecycle, revision, request generation, the original sections, copy/edit observations,
-and feedback state.
+feedback payload sent back to the SDK. The store retains both types directly. The UI
+entry adds lifecycle, revision, request generation, original sections, the pending
+receiver-feedback flag and the consult/transfer action. Copy counts, edits and feedback
+use SDK response fields rather than duplicate widget fields.
 
 Evidence: `src/ai-summary.ts`, `src/storeEventsWrapper.ts`, `src/store.types.ts`,
 `src/task-utils.ts`; tests: `tests/ai-summary.ts`, the AI summary cases in

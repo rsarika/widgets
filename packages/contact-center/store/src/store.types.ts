@@ -697,18 +697,17 @@ export type AISummaryEntry = {
   /** Lifecycle of the latest request, or of the pushed receiver summary. */
   status: 'loading' | 'ready' | 'error';
   /**
-   * The SDK payload, kept intact for every role and retained while a newer request loads or after it fails.
+   * The full SDK summary with current edits, retained while a newer request loads or after it fails.
    */
   content?: AISummary;
-  /** Received sections, used to send only changed values in the response. */
+  /** SDK submission record, updated by store actions and passed to the SDK when sending. */
+  response: AISummaryResponse;
+  /** Received sections, used to remove reverted edits from the SDK response. */
   originalSections?: AISummarySections;
   /** Bumped when a new summary arrives, so edits, copies and feedback apply to the summary that was shown. */
   revision: number;
   /** Identifies the latest request independently of edits to the displayed content. */
   requestGeneration?: number;
-  copied: number;
-  edited: boolean;
-  feedback: AISummaryFeedback;
   /** The receiving agent's feedback response is being sent. */
   feedbackPending?: boolean;
   /** The consult or transfer a mid-call summary was generated for. */

@@ -52,7 +52,16 @@ import {
 import {runInAction} from 'mobx';
 import {isAISummaryEnabled, isIncomingTask, isSecondaryAgent} from './task-utils';
 import {SUGGESTED_RESPONSE_EVENT, TASK_MULTI_LOGIN_HYDRATE} from './constants';
-import {composeAISummaryResponse} from './ai-summary';
+
+const EMPTY_AI_SUMMARY_RESPONSE: AISummaryResponse = {
+  summary: '',
+  feedback: 'none',
+  state: 'IGNORED',
+  numberOfTimesViewed: 0,
+  numberOfTimesEdited: 0,
+  numberOfTimesCopied: 0,
+  summaryReceived: false,
+};
 
 const CONSULT_TRANSFER_CHANNELS = {
   telephony: 'TELEPHONY',
@@ -526,9 +535,13 @@ class StoreWrapper implements IStoreWrapper {
         content: result,
         originalSections: result.sections ? {...result.sections} : undefined,
         revision: (entry?.revision ?? 0) + 1,
-        copied: 0,
-        edited: false,
-        feedback: 'none',
+        response: {
+          ...EMPTY_AI_SUMMARY_RESPONSE,
+          summary: role !== 'receiver' && result.sections ? {} : (result.summaryText ?? ''),
+          state: 'DEFAULT',
+          numberOfTimesViewed: 1,
+          summaryReceived: true,
+        },
         action: action ?? entry?.action,
       });
       this.notifyAISummaryStatus({kind, state: result.areTranscriptsAvailable === false ? 'unavailable' : 'available'});
@@ -540,6 +553,7 @@ class StoreWrapper implements IStoreWrapper {
       this.setAISummaryEntry(interactionId, role, {
         ...entry,
         status: 'error',
+        response: entry.content ? entry.response : {...entry.response, state: 'NOT_RECEIVED'},
         action: entry.action ?? action,
       });
       if (!entry.content) {
@@ -558,12 +572,11 @@ class StoreWrapper implements IStoreWrapper {
     }
     const role = action ? 'initiator' : 'post-call';
     const requestGeneration = ++this.aiSummaryRequestGeneration;
+    const entry = this.getAISummaryEntry(role, task);
     this.setAISummaryEntry(interactionId, role, {
       revision: 0,
-      copied: 0,
-      edited: false,
-      feedback: 'none',
-      ...this.getAISummaryEntry(role, task),
+      ...entry,
+      response: entry?.content ? entry.response : {...EMPTY_AI_SUMMARY_RESPONSE},
       status: 'loading',
       requestGeneration,
     });
@@ -626,18 +639,34 @@ class StoreWrapper implements IStoreWrapper {
       if (currentValue === value) {
         return entry;
       }
+      const updatedContent =
+        key === 'summaryText'
+          ? {...content, summaryText: value}
+          : {...content, sections: {...content.sections, [key]: value}};
+      let summary = entry.response.summary;
+      if (role === 'receiver' || !updatedContent.sections) {
+        summary = updatedContent.summaryText ?? '';
+      } else if (key !== 'summaryText') {
+        const modified: AISummarySections = {...(typeof summary === 'string' ? {} : summary)};
+        if (value === entry.originalSections?.[key]) {
+          delete modified[key];
+        } else {
+          modified[key] = value;
+        }
+        summary = modified;
+      }
       return {
         ...entry,
-        content:
-          key === 'summaryText'
-            ? {...content, summaryText: value}
-            : {...content, sections: {...content.sections, [key]: value}},
-        edited: true,
+        content: updatedContent,
+        response: {...entry.response, summary, numberOfTimesEdited: 1},
       };
     });
 
   recordAISummaryCopied = (role: AISummaryRole, expectedRevision: number, task: ITask = this.currentTask): boolean =>
-    this.updateShownAISummary(role, expectedRevision, task, (entry) => ({...entry, copied: entry.copied + 1}));
+    this.updateShownAISummary(role, expectedRevision, task, (entry) => ({
+      ...entry,
+      response: {...entry.response, numberOfTimesCopied: entry.response.numberOfTimesCopied + 1},
+    }));
 
   /**
    * Like Agent Desktop, the initiator's and the wrap-up feedback stay local: they are sent with the consult/transfer
@@ -648,7 +677,11 @@ class StoreWrapper implements IStoreWrapper {
     feedback: Exclude<AISummaryFeedback, 'none'>,
     expectedRevision: number,
     task: ITask = this.currentTask
-  ): boolean => this.updateShownAISummary(role, expectedRevision, task, (entry) => ({...entry, feedback}));
+  ): boolean =>
+    this.updateShownAISummary(role, expectedRevision, task, (entry) => ({
+      ...entry,
+      response: {...entry.response, feedback},
+    }));
 
   /** The receiving agent's feedback is sent right away; the selection is kept once the SDK confirms it. */
   setReceiverSummaryFeedback = async (
@@ -665,7 +698,7 @@ class StoreWrapper implements IStoreWrapper {
 
     let sent = true;
     try {
-      await task.sendMidCallSummaryResponse(composeAISummaryResponse({...entry, feedback}, 'receiver'), entry.action);
+      await task.sendMidCallSummaryResponse({...entry.response, feedback}, entry.action);
     } catch (error) {
       sent = false;
       this.logAISummaryFailure('feedback', error);
@@ -676,7 +709,7 @@ class StoreWrapper implements IStoreWrapper {
     if (current?.revision === expectedRevision) {
       this.setAISummaryEntry(interactionId, 'receiver', {
         ...current,
-        feedback: sent ? feedback : current.feedback,
+        response: sent ? {...current.response, feedback} : current.response,
         feedbackPending: false,
       });
     }
@@ -692,7 +725,7 @@ class StoreWrapper implements IStoreWrapper {
     }
     try {
       await task.sendMidCallSummaryResponse(
-        composeAISummaryResponse(this.getAISummaryEntry('initiator', task), 'initiator'),
+        this.getAISummaryEntry('initiator', task)?.response ?? {...EMPTY_AI_SUMMARY_RESPONSE},
         action
       );
     } catch (error) {
@@ -701,13 +734,19 @@ class StoreWrapper implements IStoreWrapper {
   };
 
   /**
-   * Composes the final post-call response. Callers take it before wrap-up, because the task and its summary are
-   * removed once wrap-up completes.
+   * Stores the wrap-up code and captures the SDK response before wrap-up removes the task and its summary.
    */
-  getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined =>
-    isAISummaryEnabled(task, 'postCallEnabled')
-      ? composeAISummaryResponse(this.getAISummaryEntry('post-call', task), 'post-call', wrapUpCode)
-      : undefined;
+  getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined => {
+    if (!isAISummaryEnabled(task, 'postCallEnabled')) {
+      return undefined;
+    }
+    const entry = this.getAISummaryEntry('post-call', task);
+    const response = {...(entry?.response ?? EMPTY_AI_SUMMARY_RESPONSE), wrapUpCode};
+    if (entry) {
+      this.setAISummaryEntry(task.data.interactionId, 'post-call', {...entry, response});
+    }
+    return response;
+  };
 
   /** Sends once using the original task captured before wrap-up, even after currentTask changes. */
   sendPostCallSummaryResponse = async (
