@@ -3957,7 +3957,24 @@ describe('storeEventsWrapper', () => {
           action: 'CONSULT',
           content: {sections: expect.any(Object)},
         });
+        expect(entryFor('initiator').content).toEqual(aiSummaryFixtures.initiatingMidCall.typedSections);
         expect(statusListener).toHaveBeenCalledWith({kind: 'mid-call', state: 'available'});
+      });
+
+      it('should preserve SDK fields without filtering sections or choosing a display format', async () => {
+        const task = makeAISummaryTask();
+        const payload: AISummary = {
+          ...aiSummaryFixtures.initiatingMidCall.typedSections,
+          sections: {reasonForTransferOrConsult: '', nextSteps: 'Follow up tomorrow.'},
+          editAdaptiveCard: {type: 'AdaptiveCard'},
+          suggestedWrapUpCodes: [{name: 'Billing'}],
+        };
+        task.requestMidCallSummary.mockResolvedValueOnce(payload);
+
+        await storeWrapper.requestMidCallSummary('CONSULT', task);
+
+        expect(entryFor('initiator').content).toEqual(payload);
+        expect(entryFor('initiator').originalSections).toEqual(payload.sections);
       });
 
       it('should not request a summary kind the SDK reports as disabled for the task', async () => {
@@ -3994,7 +4011,6 @@ describe('storeEventsWrapper', () => {
         await Promise.resolve();
 
         expect(entryFor('initiator')).toMatchObject({status: 'ready', action: 'TRANSFER'});
-        expect(entryFor('initiator').error).toBeUndefined();
       });
 
       it('should keep the summary already shown when a refresh fails', async () => {
@@ -4008,7 +4024,6 @@ describe('storeEventsWrapper', () => {
 
         expect(entryFor('initiator')).toMatchObject({
           status: 'error',
-          error: 'failed',
           content: shown.content,
           revision: shown.revision,
           action: 'CONSULT',
@@ -4035,7 +4050,6 @@ describe('storeEventsWrapper', () => {
           await first;
 
           expect(entryFor(role)).toMatchObject({status: 'loading'});
-          expect(entryFor(role).error).toBeUndefined();
           expect(statusListener).not.toHaveBeenCalled();
 
           newer.resolve(aiSummaryFixtures.initiatingMidCall.plainText);
@@ -4081,7 +4095,7 @@ describe('storeEventsWrapper', () => {
 
         await storeWrapper.requestPostCallSummary(task);
 
-        expect(entryFor('post-call')).toMatchObject({status: 'error', error: 'failed'});
+        expect(entryFor('post-call')).toMatchObject({status: 'error'});
         expect(statusListener).toHaveBeenCalledWith({kind: 'post-call', state: 'unavailable'});
         expect(storeWrapper['store'].logger.error).toHaveBeenCalledWith(
           'CC-Widgets: AI summary request failed: Error: POST_CALL_SUMMARY_TIMEOUT',
@@ -4089,13 +4103,27 @@ describe('storeEventsWrapper', () => {
         );
       });
 
-      it('should report an unrenderable payload as unsupported', async () => {
+      it('should retain a card-only SDK reply for the UI to render', async () => {
         const task = makeAISummaryTask();
         task.requestPostCallSummary.mockResolvedValueOnce(aiSummaryFixtures.postCall.cardOnlyUnsupported);
 
         await storeWrapper.requestPostCallSummary(task);
 
-        expect(entryFor('post-call')).toMatchObject({status: 'error', error: 'unsupported'});
+        expect(entryFor('post-call')).toMatchObject({
+          status: 'ready',
+          content: aiSummaryFixtures.postCall.cardOnlyUnsupported,
+        });
+        expect(statusListener).toHaveBeenCalledWith({kind: 'post-call', state: 'available'});
+      });
+
+      it('should retain the SDK reply and report unavailable when transcripts are unavailable', async () => {
+        const task = makeAISummaryTask();
+        const payload: AISummary = {conversationId: INTERACTION_ID, areTranscriptsAvailable: false};
+        task.requestPostCallSummary.mockResolvedValueOnce(payload);
+
+        await storeWrapper.requestPostCallSummary(task);
+
+        expect(entryFor('post-call')).toMatchObject({status: 'ready', content: payload});
         expect(statusListener).toHaveBeenCalledWith({kind: 'post-call', state: 'unavailable'});
       });
 
@@ -4133,6 +4161,7 @@ describe('storeEventsWrapper', () => {
           action: 'TRANSFER',
           content: {adaptiveCard: expect.any(Object)},
         });
+        expect(entryFor('receiver').content).toEqual(aiSummaryFixtures.receivingMidCall.adaptiveCard);
         expect(statusListener).toHaveBeenCalledWith({kind: 'mid-call', state: 'available'});
 
         const consultTask = makeAISummaryTask({
@@ -4144,14 +4173,17 @@ describe('storeEventsWrapper', () => {
         expect(entryFor('receiver')).toMatchObject({revision: 2, action: 'CONSULT'});
       });
 
-      it('should mark a pushed summary without an adaptive card as unavailable', () => {
+      it('should retain a pushed SDK summary without requiring an adaptive card', () => {
         const task = makeAISummaryTask();
         registerTaskEventListeners(task);
 
         receivedListenerOf(task)(aiSummaryFixtures.receivingMidCall.typedOnlyUnsupported);
 
-        expect(entryFor('receiver')).toMatchObject({status: 'error', error: 'unsupported'});
-        expect(statusListener).toHaveBeenCalledWith({kind: 'mid-call', state: 'unavailable'});
+        expect(entryFor('receiver')).toMatchObject({
+          status: 'ready',
+          content: aiSummaryFixtures.receivingMidCall.typedOnlyUnsupported,
+        });
+        expect(statusListener).toHaveBeenCalledWith({kind: 'mid-call', state: 'available'});
       });
 
       it('should rebind the listener for a replacement task object and remove it with the task', () => {
@@ -4261,7 +4293,8 @@ describe('storeEventsWrapper', () => {
         expect(storeWrapper.editAISummary('initiator', 'additionalContext', 'Edited', 1, task)).toBe(true);
         expect(storeWrapper.editAISummary('initiator', 'additionalContext', 'Edited again', 1, task)).toBe(true);
         expect(entryFor('initiator')).toMatchObject({revision: 1, edited: true});
-        expect(storeWrapper.editAISummary('initiator', 'summaryText', 'Not a section', 1, task)).toBe(false);
+        expect(storeWrapper.editAISummary('initiator', 'summaryText', 'Edited SDK text', 1, task)).toBe(true);
+        expect(entryFor('initiator').content.summaryText).toBe('Edited SDK text');
         expect(storeWrapper.editAISummary('initiator', 'additionalContext', 'Stale', 0, task)).toBe(false);
       });
 

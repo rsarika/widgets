@@ -1,156 +1,62 @@
 import {aiSummaryFixtures} from '../../test-fixtures/src/aiSummaryFixtures';
-import {
-  composeAISummaryResponse,
-  editAISummaryContent,
-  getAISummarySurface,
-  newAISummaryEntry,
-  normalizeAISummaryPayload,
-} from '../src/ai-summary';
+import {composeAISummaryResponse, editAISummaryContent, getAISummarySurface} from '../src/ai-summary';
 import type {AISummaryEntry} from '../src/store.types';
+import type {AISummary} from '@webex/contact-center';
 
-type AISummaryContent = NonNullable<AISummaryEntry['content']>;
-
-const entryWith = (content: AISummaryContent, overrides: Partial<AISummaryEntry> = {}): AISummaryEntry => ({
-  ...newAISummaryEntry(),
-  status: 'ready',
-  revision: 1,
-  content,
-  originalSections: content.sections ? {...content.sections} : undefined,
+const entryWith = (content?: Partial<AISummary>, overrides: Partial<AISummaryEntry> = {}): AISummaryEntry => ({
+  status: content ? 'ready' : 'loading',
+  revision: content ? 1 : 0,
+  copied: 0,
+  edited: false,
+  feedback: 'none',
+  content: content ? {conversationId: 'interaction-main-1', ...content} : undefined,
+  originalSections: content?.sections ? {...content.sections} : undefined,
   ...overrides,
 });
 
-const contentOf = (result: ReturnType<typeof normalizeAISummaryPayload>): AISummaryContent => {
-  if (typeof result === 'string') {
-    throw new Error(`Expected a summary, got ${result}`);
-  }
-  return result;
-};
-
 describe('ai-summary', () => {
-  describe('normalizeAISummaryPayload', () => {
-    it('should keep only the SDK sections rendered for the initiator', () => {
-      const result = normalizeAISummaryPayload(
-        {
-          ...aiSummaryFixtures.initiatingMidCall.typedSections,
-          sections: {
-            ...aiSummaryFixtures.initiatingMidCall.typedSections.sections,
-            nextSteps: 'Not an initiator section',
-          },
-        },
-        'initiator'
-      );
-
-      expect(contentOf(result)).toEqual({
-        sections: {
-          reasonForTransferOrConsult: 'Customer needs billing help.',
-          additionalContext: 'Invoice discrepancy is the active topic.',
-          keyActionsTaken: 'Verified account and checked invoice.',
-        },
-      });
-    });
-
-    it('should fall back to non-blank summaryText when no declared section has a value', () => {
-      const result = normalizeAISummaryPayload(
-        {
-          conversationId: 'interaction-main-1',
-          sections: {reasonForTransferOrConsult: '  '},
-          summaryText: '  Plain text with original bytes.  ',
-        },
-        'initiator'
-      );
-
-      expect(contentOf(result)).toEqual({summaryText: '  Plain text with original bytes.  '});
-    });
-
-    it('should accept plain and structured post-call summaries and keep the resolution separate', () => {
-      expect(contentOf(normalizeAISummaryPayload(aiSummaryFixtures.postCall.plainText, 'post-call'))).toHaveProperty(
-        'summaryText'
-      );
-
-      const present = contentOf(normalizeAISummaryPayload(aiSummaryFixtures.postCall.resolutionPresent, 'post-call'));
-      expect(present.resolution).toBe('Correction approved');
-      expect(Object.keys(present.sections ?? {})).toEqual(['initialContactReason', 'nextSteps']);
-
-      for (const payload of [
-        aiSummaryFixtures.postCall.resolutionAbsent,
-        aiSummaryFixtures.postCall.resolutionEmptyBoundary,
-      ]) {
-        expect(contentOf(normalizeAISummaryPayload(payload, 'post-call'))).not.toHaveProperty('resolution');
-      }
-    });
-
-    it('should report card-only initiator and post-call payloads as unsupported', () => {
-      expect(normalizeAISummaryPayload(aiSummaryFixtures.initiatingMidCall.cardOnlyUnsupported, 'initiator')).toBe(
-        'unsupported'
-      );
-      expect(normalizeAISummaryPayload(aiSummaryFixtures.postCall.cardOnlyUnsupported, 'post-call')).toBe(
-        'unsupported'
-      );
-    });
-
-    it('should keep the receiver card for display and SDK text for feedback', () => {
-      expect(contentOf(normalizeAISummaryPayload(aiSummaryFixtures.receivingMidCall.adaptiveCard, 'receiver'))).toEqual(
-        {
-          adaptiveCard: aiSummaryFixtures.receivingMidCall.adaptiveCard.adaptiveCard,
-          summaryText: aiSummaryFixtures.receivingMidCall.adaptiveCard.summaryText,
-        }
-      );
-      expect(normalizeAISummaryPayload(aiSummaryFixtures.receivingMidCall.typedOnlyUnsupported, 'receiver')).toBe(
-        'unsupported'
-      );
-      expect(normalizeAISummaryPayload(aiSummaryFixtures.initiatingMidCall.plainText, 'receiver')).toBe('unsupported');
-    });
-
-    it('should report empty SDK summaries as failures', () => {
-      const failed = 'failed';
-
-      expect(normalizeAISummaryPayload({conversationId: 'interaction-main-1', summaryText: ' '}, 'post-call')).toEqual(
-        failed
-      );
-      expect(normalizeAISummaryPayload({conversationId: 'interaction-main-1'}, 'post-call')).toEqual(failed);
-    });
-  });
-
   describe('getAISummarySurface', () => {
-    it('should derive what the summary location shows from the entry', () => {
+    it('should derive the surface from request state while keeping received content visible during a refresh', () => {
       expect(getAISummarySurface(undefined)).toBe('omitted');
-      expect(getAISummarySurface({...newAISummaryEntry(), status: 'loading'})).toBe('generating');
+      expect(getAISummarySurface(entryWith())).toBe('generating');
+      expect(getAISummarySurface(entryWith(undefined, {status: 'error'}))).toBe('generic-error');
       expect(getAISummarySurface(entryWith({summaryText: 'Summary'}, {status: 'loading'}))).toBe('content');
-      expect(getAISummarySurface({...newAISummaryEntry(), status: 'error', error: 'failed'})).toBe('generic-error');
-      expect(getAISummarySurface({...newAISummaryEntry(), status: 'error', error: 'unsupported'})).toBe('unavailable');
+      expect(getAISummarySurface(entryWith({summaryText: 'Summary'}, {status: 'error'}))).toBe('content');
+    });
+
+    it('should use the SDK transcript availability flag without interpreting the payload format', () => {
+      expect(getAISummarySurface(entryWith({areTranscriptsAvailable: false}))).toBe('unavailable');
+      expect(getAISummarySurface(entryWith(aiSummaryFixtures.postCall.cardOnlyUnsupported))).toBe('content');
+      expect(getAISummarySurface(entryWith({sections: {nextSteps: ''}, summaryText: '  '}))).toBe('content');
     });
   });
 
   describe('editAISummaryContent', () => {
-    it('should apply a text edit and mark the summary edited without changing its revision', () => {
-      const entry = entryWith({summaryText: 'Original'});
+    it('should apply a text edit without losing SDK fields or changing the displayed revision', () => {
+      const entry = entryWith({summaryText: 'Original', languageCode: 'en-US', timestamp: 42});
 
       expect(editAISummaryContent(entry, 'summaryText', 'Edited')).toEqual({
         ...entry,
-        content: {summaryText: 'Edited'},
+        content: {...entry.content, summaryText: 'Edited'},
         edited: true,
       });
     });
 
-    it('should edit only the matching section', () => {
-      const entry = entryWith(contentOf(normalizeAISummaryPayload(aiSummaryFixtures.postCall.structured, 'post-call')));
+    it('should edit only the matching section and preserve the received snapshot', () => {
+      const entry = entryWith(aiSummaryFixtures.postCall.structured);
       const edited = editAISummaryContent(entry, 'nextSteps', 'Call back Friday.');
 
       expect(edited).toMatchObject({revision: 1, edited: true});
-      expect(edited?.content?.sections).toEqual({...entry.content?.sections, nextSteps: 'Call back Friday.'});
+      expect(edited?.content).toEqual({
+        ...entry.content,
+        sections: {...entry.content?.sections, nextSteps: 'Call back Friday.'},
+      });
+      expect(edited?.originalSections).toEqual(aiSummaryFixtures.postCall.structured.sections);
     });
 
-    it('should preserve blank sections alongside populated ones so an agent can fill them', () => {
-      const entry = entryWith(
-        contentOf(
-          normalizeAISummaryPayload(
-            {conversationId: 'interaction-main-1', sections: {initialContactReason: 'Billing inquiry', nextSteps: ''}},
-            'post-call'
-          )
-        )
-      );
+    it('should let an agent fill a blank section', () => {
+      const entry = entryWith({sections: {initialContactReason: 'Billing inquiry', nextSteps: ''}});
 
-      expect(entry.content?.sections).toEqual({initialContactReason: 'Billing inquiry', nextSteps: ''});
       expect(editAISummaryContent(entry, 'nextSteps', 'Email the corrected invoice.')).toMatchObject({
         content: {sections: {initialContactReason: 'Billing inquiry', nextSteps: 'Email the corrected invoice.'}},
         edited: true,
@@ -165,19 +71,16 @@ describe('ai-summary', () => {
       expect(editAISummaryContent(text, 'additionalContext', 'x')).toBeUndefined();
       expect(editAISummaryContent(sections, 'summaryText', 'x')).toBeUndefined();
       expect(editAISummaryContent(sections, 'nextSteps', 'x')).toBeUndefined();
-      expect(editAISummaryContent({...newAISummaryEntry(), status: 'ready'}, 'summaryText', 'x')).toBeUndefined();
+      expect(editAISummaryContent(entryWith(), 'summaryText', 'x')).toBeUndefined();
     });
   });
 
   describe('response composition', () => {
     it('should report only changed mid-call sections with feedback, the edit flag and copies', () => {
-      const content = contentOf(
-        normalizeAISummaryPayload(aiSummaryFixtures.initiatingMidCall.typedSections, 'initiator')
-      );
-      const entry = entryWith(content, {copied: 2, feedback: 'thumbs_up'});
+      const entry = entryWith(aiSummaryFixtures.initiatingMidCall.typedSections, {copied: 2, feedback: 'thumbs_up'});
       const edited = editAISummaryContent(entry, 'additionalContext', 'Invoice correction requested.');
 
-      expect(composeAISummaryResponse(edited)).toEqual({
+      expect(composeAISummaryResponse(edited, 'initiator')).toEqual({
         summary: {additionalContext: 'Invoice correction requested.'},
         feedback: 'thumbs_up',
         state: 'DEFAULT',
@@ -188,12 +91,10 @@ describe('ai-summary', () => {
       });
     });
 
-    it('should compose the receiving agent response from SDK text without flattening the card', () => {
-      const entry = entryWith(
-        contentOf(normalizeAISummaryPayload(aiSummaryFixtures.receivingMidCall.adaptiveCard, 'receiver'))
-      );
+    it('should use receiver SDK text even when the payload also contains sections and a card', () => {
+      const entry = entryWith(aiSummaryFixtures.receivingMidCall.adaptiveCard);
 
-      expect(composeAISummaryResponse(entry)).toMatchObject({
+      expect(composeAISummaryResponse(entry, 'receiver')).toMatchObject({
         summary: aiSummaryFixtures.receivingMidCall.adaptiveCard.summaryText,
         feedback: 'none',
       });
@@ -202,10 +103,14 @@ describe('ai-summary', () => {
     it('should send empty text when a receiver card has no SDK summaryText', () => {
       const entry = entryWith({adaptiveCard: aiSummaryFixtures.receivingMidCall.adaptiveCard.adaptiveCard});
 
-      expect(composeAISummaryResponse(entry)).toMatchObject({summary: '', summaryReceived: true, state: 'DEFAULT'});
+      expect(composeAISummaryResponse(entry, 'receiver')).toMatchObject({
+        summary: '',
+        summaryReceived: true,
+        state: 'DEFAULT',
+      });
     });
 
-    it('should report a summary that failed as not received and one still pending as ignored', () => {
+    it('should report a failed request as not received and a pending one as ignored', () => {
       const notReceived = {
         summary: '',
         feedback: 'none',
@@ -216,18 +121,15 @@ describe('ai-summary', () => {
         summaryReceived: false,
       };
 
-      expect(composeAISummaryResponse({...newAISummaryEntry(), status: 'error', error: 'failed'})).toEqual(notReceived);
-      expect(composeAISummaryResponse({...newAISummaryEntry(), status: 'loading'})).toEqual({
-        ...notReceived,
-        state: 'IGNORED',
-      });
-      expect(composeAISummaryResponse(undefined)).toEqual({...notReceived, state: 'IGNORED'});
+      expect(composeAISummaryResponse(entryWith(undefined, {status: 'error'}), 'initiator')).toEqual(notReceived);
+      expect(composeAISummaryResponse(entryWith(), 'initiator')).toEqual({...notReceived, state: 'IGNORED'});
+      expect(composeAISummaryResponse(undefined, 'initiator')).toEqual({...notReceived, state: 'IGNORED'});
     });
 
-    it('should always compose the post-call response with the wrap-up code', () => {
+    it('should include the wrap-up code in the post-call response', () => {
       const entry = entryWith({summaryText: 'Resolved billing issue.'}, {feedback: 'thumbs_down'});
 
-      expect(composeAISummaryResponse(entry, 'aux-billing')).toEqual({
+      expect(composeAISummaryResponse(entry, 'post-call', 'aux-billing')).toEqual({
         summary: 'Resolved billing issue.',
         feedback: 'thumbs_down',
         state: 'DEFAULT',
@@ -237,7 +139,7 @@ describe('ai-summary', () => {
         summaryReceived: true,
         wrapUpCode: 'aux-billing',
       });
-      expect(composeAISummaryResponse(undefined, 'aux-billing')).toMatchObject({
+      expect(composeAISummaryResponse(undefined, 'post-call', 'aux-billing')).toMatchObject({
         summary: '',
         state: 'IGNORED',
         wrapUpCode: 'aux-billing',

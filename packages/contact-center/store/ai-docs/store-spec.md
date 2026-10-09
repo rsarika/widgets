@@ -420,21 +420,24 @@ interaction ID lets task cleanup remove them together; entries are created as ne
   `TASK_MID_CALL_SUMMARY_RECEIVED` supplies the receiver summary. Listeners are rebound
   together when a task object is replaced, registered once per task object, and detached
   on task removal and logout.
-- Initiator and post-call views use the role's SDK `sections` when any has content,
-  preserving blank sibling fields for editing, or fall back to `summaryText`.
-  Receiver views use `adaptiveCard` and retain SDK `summaryText` for feedback without
-  flattening card text. `src/ai-summary.ts` handles this UI projection,
-  edits, `getAISummarySurface`, and one shared response composer using SDK types.
-  Requests and receiver listeners pass SDK `AISummary` directly. The helper selects
-  role-specific content and checks whether there is anything to display; it does not
-  parse `unknown` payloads or revalidate SDK field types. Invalid transport payloads
-  belong to the SDK boundary.
+- Every role stores the complete SDK `AISummary` in `content`, including sections,
+  summary text, cards and SDK metadata. The store does not filter sections, trim text,
+  choose a display format or reject a received payload because of its format. Components
+  choose what they display and edit from the SDK fields; edits preserve the other fields.
+  `getAISummarySurface` maps the request
+  lifecycle to a display state and respects the SDK's `areTranscriptsAvailable: false`
+  flag as unavailable; an SDK request rejection is a generic error. A failed refresh
+  keeps previously received content visible. Invalid transport payloads belong to the
+  SDK boundary.
 - Edits, copies and feedback carry the displayed revision. Initiator/post-call feedback
   remains local until the response is sent; receiver feedback is sent immediately and
   displayed as selected after the SDK confirms it.
 - Structured responses contain only sections whose values differ from the received
   snapshot, matching Agent Desktop. An unchanged summary sends `{}`; a cleared section
   sends its key with `''`. Plain-text responses use the current SDK summary text.
+  Receiver responses always use SDK `summaryText`, even when the same payload also
+  contains sections or an adaptive card. `src/ai-summary.ts` contains the edits,
+  lifecycle selector and a shared response composer; there is no payload normalizer.
 - `getPostCallSummaryResponse` freezes the response before wrap-up removes the task.
   `sendPostCallSummaryResponse(response, task)` requires that original task to send it
   afterward, because `currentTask` may already refer to another interaction. It reports
@@ -445,7 +448,8 @@ The integration consumes `AISummary`, `AISummarySections`, `AISummaryResponse`,
 `AISummaryAction`, and `AISummaryFeedback` from `@webex/contact-center`.
 The temporary root resolution uses `vendor/contact-center-cc-summaries.tgz`; release
 requires replacing it with a published SDK version containing these APIs.
-The store re-exports only the SDK summary types its consumers use; the UI entry adds
+`AISummary` is the common incoming payload type; `AISummaryResponse` is the distinct
+feedback payload sent back to the SDK. The UI entry adds
 lifecycle, revision, request generation, the original sections, copy/edit observations,
 and feedback state.
 

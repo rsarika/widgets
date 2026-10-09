@@ -697,14 +697,11 @@ export type AISummaryEntry = {
   /** Lifecycle of the latest request, or of the pushed receiver summary. */
   status: 'loading' | 'ready' | 'error';
   /**
-   * The SDK summary fields this role renders: receiver card with SDK text retained for feedback, otherwise sections
-   * (with the post-call resolution) or `summaryText`. Kept while a newer request loads or after it fails.
+   * The SDK payload, kept intact for every role and retained while a newer request loads or after it fails.
    */
-  content?: Pick<AISummary, 'adaptiveCard' | 'sections' | 'resolution' | 'summaryText'>;
+  content?: AISummary;
   /** Received sections, used to send only changed values in the response. */
   originalSections?: AISummarySections;
-  /** Why the latest request failed; `unsupported` when the payload had nothing this role can render. */
-  error?: 'failed' | 'unsupported';
   /** Bumped when a new summary arrives, so edits, copies and feedback apply to the summary that was shown. */
   revision: number;
   /** Identifies the latest request independently of edits to the displayed content. */

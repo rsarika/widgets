@@ -52,12 +52,7 @@ import {
 import {runInAction} from 'mobx';
 import {isAISummaryEnabled, isIncomingTask, isSecondaryAgent} from './task-utils';
 import {SUGGESTED_RESPONSE_EVENT, TASK_MULTI_LOGIN_HYDRATE} from './constants';
-import {
-  composeAISummaryResponse,
-  editAISummaryContent,
-  newAISummaryEntry,
-  normalizeAISummaryPayload,
-} from './ai-summary';
+import {composeAISummaryResponse, editAISummaryContent} from './ai-summary';
 
 const CONSULT_TRANSFER_CHANNELS = {
   telephony: 'TELEPHONY',
@@ -519,34 +514,37 @@ class StoreWrapper implements IStoreWrapper {
   private applyAISummaryResult(
     interactionId: string,
     role: AISummaryRole,
-    result: ReturnType<typeof normalizeAISummaryPayload>,
+    result: AISummary | undefined,
     action?: AISummaryAction
   ): void {
-    const entry = this.store.aiSummaries[interactionId]?.[role] ?? newAISummaryEntry();
+    const entry = this.store.aiSummaries[interactionId]?.[role];
     const kind = role === 'post-call' ? 'post-call' : 'mid-call';
-    if (typeof result !== 'string') {
+    if (result) {
       // A new summary replaces the old one along with its copies, edits and feedback.
       this.setAISummaryEntry(interactionId, role, {
-        ...newAISummaryEntry(),
         status: 'ready',
         content: result,
         originalSections: result.sections ? {...result.sections} : undefined,
-        revision: entry.revision + 1,
-        action: action ?? entry.action,
+        revision: (entry?.revision ?? 0) + 1,
+        copied: 0,
+        edited: false,
+        feedback: 'none',
+        action: action ?? entry?.action,
       });
-      this.notifyAISummaryStatus({kind, state: 'available'});
+      this.notifyAISummaryStatus({kind, state: result.areTranscriptsAvailable === false ? 'unavailable' : 'available'});
       return;
     }
 
     // A failed refresh keeps the summary already shown.
-    this.setAISummaryEntry(interactionId, role, {
-      ...entry,
-      status: 'error',
-      error: result,
-      action: entry.action ?? action,
-    });
-    if (!entry.content) {
-      this.notifyAISummaryStatus({kind, state: 'unavailable'});
+    if (entry) {
+      this.setAISummaryEntry(interactionId, role, {
+        ...entry,
+        status: 'error',
+        action: entry.action ?? action,
+      });
+      if (!entry.content) {
+        this.notifyAISummaryStatus({kind, state: 'unavailable'});
+      }
     }
   }
 
@@ -559,17 +557,22 @@ class StoreWrapper implements IStoreWrapper {
       return;
     }
     const role = action ? 'initiator' : 'post-call';
-    const entry = this.getAISummaryEntry(role, task) ?? newAISummaryEntry();
     const requestGeneration = ++this.aiSummaryRequestGeneration;
-    this.setAISummaryEntry(interactionId, role, {...entry, status: 'loading', requestGeneration});
+    this.setAISummaryEntry(interactionId, role, {
+      revision: 0,
+      copied: 0,
+      edited: false,
+      feedback: 'none',
+      ...this.getAISummaryEntry(role, task),
+      status: 'loading',
+      requestGeneration,
+    });
 
-    let result: ReturnType<typeof normalizeAISummaryPayload>;
+    let result: AISummary | undefined;
     try {
-      const payload = await (action ? task.requestMidCallSummary(action) : task.requestPostCallSummary());
-      result = normalizeAISummaryPayload(payload, role);
+      result = await (action ? task.requestMidCallSummary(action) : task.requestPostCallSummary());
     } catch (error) {
       this.logAISummaryFailure('request', error);
-      result = 'failed';
     }
     if (this.getAISummaryEntry(role, task)?.requestGeneration === requestGeneration) {
       this.applyAISummaryResult(interactionId, role, result, action);
@@ -586,7 +589,7 @@ class StoreWrapper implements IStoreWrapper {
     const interactionId = task.data?.interactionId;
     if (interactionId) {
       const action = isSecondaryAgent(task) ? 'CONSULT' : 'TRANSFER';
-      this.applyAISummaryResult(interactionId, 'receiver', normalizeAISummaryPayload(payload, 'receiver'), action);
+      this.applyAISummaryResult(interactionId, 'receiver', payload, action);
     }
   };
 
@@ -646,7 +649,7 @@ class StoreWrapper implements IStoreWrapper {
 
     let sent = true;
     try {
-      await task.sendMidCallSummaryResponse(composeAISummaryResponse({...entry, feedback}), entry.action);
+      await task.sendMidCallSummaryResponse(composeAISummaryResponse({...entry, feedback}, 'receiver'), entry.action);
     } catch (error) {
       sent = false;
       this.logAISummaryFailure('feedback', error);
@@ -673,7 +676,7 @@ class StoreWrapper implements IStoreWrapper {
     }
     try {
       await task.sendMidCallSummaryResponse(
-        composeAISummaryResponse(this.getAISummaryEntry('initiator', task)),
+        composeAISummaryResponse(this.getAISummaryEntry('initiator', task), 'initiator'),
         action
       );
     } catch (error) {
@@ -687,7 +690,7 @@ class StoreWrapper implements IStoreWrapper {
    */
   getPostCallSummaryResponse = (wrapUpCode: string, task: ITask = this.currentTask): AISummaryResponse | undefined =>
     isAISummaryEnabled(task, 'postCallEnabled')
-      ? composeAISummaryResponse(this.getAISummaryEntry('post-call', task), wrapUpCode)
+      ? composeAISummaryResponse(this.getAISummaryEntry('post-call', task), 'post-call', wrapUpCode)
       : undefined;
 
   /** Sends once using the original task captured before wrap-up, even after currentTask changes. */
