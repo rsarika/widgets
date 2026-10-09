@@ -1,5 +1,5 @@
 import {aiSummaryFixtures} from '../../test-fixtures/src/aiSummaryFixtures';
-import {composeAISummaryResponse, editAISummaryContent, getAISummarySurface} from '../src/ai-summary';
+import {composeAISummaryResponse, getAISummarySurface} from '../src/ai-summary';
 import type {AISummaryEntry} from '../src/store.types';
 import type {AISummary} from '@webex/contact-center';
 
@@ -31,54 +31,17 @@ describe('ai-summary', () => {
     });
   });
 
-  describe('editAISummaryContent', () => {
-    it('should apply a text edit without losing SDK fields or changing the displayed revision', () => {
-      const entry = entryWith({summaryText: 'Original', languageCode: 'en-US', timestamp: 42});
-
-      expect(editAISummaryContent(entry, 'summaryText', 'Edited')).toEqual({
-        ...entry,
-        content: {...entry.content, summaryText: 'Edited'},
-        edited: true,
-      });
-    });
-
-    it('should edit only the matching section and preserve the received snapshot', () => {
-      const entry = entryWith(aiSummaryFixtures.postCall.structured);
-      const edited = editAISummaryContent(entry, 'nextSteps', 'Call back Friday.');
-
-      expect(edited).toMatchObject({revision: 1, edited: true});
-      expect(edited?.content).toEqual({
-        ...entry.content,
-        sections: {...entry.content?.sections, nextSteps: 'Call back Friday.'},
-      });
-      expect(edited?.originalSections).toEqual(aiSummaryFixtures.postCall.structured.sections);
-    });
-
-    it('should let an agent fill a blank section', () => {
-      const entry = entryWith({sections: {initialContactReason: 'Billing inquiry', nextSteps: ''}});
-
-      expect(editAISummaryContent(entry, 'nextSteps', 'Email the corrected invoice.')).toMatchObject({
-        content: {sections: {initialContactReason: 'Billing inquiry', nextSteps: 'Email the corrected invoice.'}},
-        edited: true,
-      });
-    });
-
-    it('should accept an unchanged value as a no-op and reject fields the content does not have', () => {
-      const text = entryWith({summaryText: 'Original'});
-      const sections = entryWith({sections: {additionalContext: 'Context'}});
-
-      expect(editAISummaryContent(text, 'summaryText', 'Original')).toBe(text);
-      expect(editAISummaryContent(text, 'additionalContext', 'x')).toBeUndefined();
-      expect(editAISummaryContent(sections, 'summaryText', 'x')).toBeUndefined();
-      expect(editAISummaryContent(sections, 'nextSteps', 'x')).toBeUndefined();
-      expect(editAISummaryContent(entryWith(), 'summaryText', 'x')).toBeUndefined();
-    });
-  });
-
   describe('response composition', () => {
     it('should report only changed mid-call sections with feedback, the edit flag and copies', () => {
       const entry = entryWith(aiSummaryFixtures.initiatingMidCall.typedSections, {copied: 2, feedback: 'thumbs_up'});
-      const edited = editAISummaryContent(entry, 'additionalContext', 'Invoice correction requested.');
+      const edited: AISummaryEntry = {
+        ...entry,
+        content: {
+          ...aiSummaryFixtures.initiatingMidCall.typedSections,
+          sections: {...entry.content?.sections, additionalContext: 'Invoice correction requested.'},
+        },
+        edited: true,
+      };
 
       expect(composeAISummaryResponse(edited, 'initiator')).toEqual({
         summary: {additionalContext: 'Invoice correction requested.'},

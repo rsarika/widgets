@@ -4298,6 +4298,51 @@ describe('storeEventsWrapper', () => {
         expect(storeWrapper.editAISummary('initiator', 'additionalContext', 'Stale', 0, task)).toBe(false);
       });
 
+      it('should edit a blank SDK section while preserving metadata and the received snapshot', async () => {
+        const task = makeAISummaryTask();
+        const payload: AISummary = {
+          ...aiSummaryFixtures.postCall.structured,
+          sections: {initialContactReason: 'Billing inquiry', nextSteps: ''},
+        };
+        task.requestPostCallSummary.mockResolvedValueOnce(payload);
+        await storeWrapper.requestPostCallSummary(task);
+
+        expect(storeWrapper.editAISummary('post-call', 'nextSteps', 'Email the invoice.', 1, task)).toBe(true);
+
+        expect(entryFor('post-call')).toMatchObject({
+          revision: 1,
+          edited: true,
+          content: {...payload, sections: {...payload.sections, nextSteps: 'Email the invoice.'}},
+          originalSections: payload.sections,
+        });
+        expect(storeWrapper.getPostCallSummaryResponse('aux-billing', task).summary).toEqual({
+          nextSteps: 'Email the invoice.',
+        });
+      });
+
+      it('should treat unchanged edits as a no-op and reject absent SDK fields', async () => {
+        const task = makeAISummaryTask();
+        await storeWrapper.requestPostCallSummary(task);
+
+        expect(
+          storeWrapper.editAISummary(
+            'post-call',
+            'summaryText',
+            aiSummaryFixtures.postCall.plainText.summaryText,
+            1,
+            task
+          )
+        ).toBe(true);
+        expect(entryFor('post-call').edited).toBe(false);
+        expect(storeWrapper.editAISummary('post-call', 'additionalContext', 'Missing section', 1, task)).toBe(false);
+
+        task.requestPostCallSummary.mockResolvedValueOnce({conversationId: INTERACTION_ID, sections: {nextSteps: ''}});
+        await storeWrapper.requestPostCallSummary(task);
+
+        expect(storeWrapper.editAISummary('post-call', 'summaryText', 'Missing text', 2, task)).toBe(false);
+        expect(entryFor('post-call').edited).toBe(false);
+      });
+
       it('should start a new summary without the previous copies, edits or feedback', async () => {
         const task = makeAISummaryTask();
         await storeWrapper.requestPostCallSummary(task);

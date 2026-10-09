@@ -52,7 +52,7 @@ import {
 import {runInAction} from 'mobx';
 import {isAISummaryEnabled, isIncomingTask, isSecondaryAgent} from './task-utils';
 import {SUGGESTED_RESPONSE_EVENT, TASK_MULTI_LOGIN_HYDRATE} from './constants';
-import {composeAISummaryResponse, editAISummaryContent} from './ai-summary';
+import {composeAISummaryResponse} from './ai-summary';
 
 const CONSULT_TRANSFER_CHANNELS = {
   telephony: 'TELEPHONY',
@@ -598,13 +598,13 @@ class StoreWrapper implements IStoreWrapper {
     role: AISummaryRole,
     expectedRevision: number,
     task: ITask,
-    update: (entry: AISummaryEntry) => AISummaryEntry | undefined
+    update: (entry: AISummaryEntry, content: AISummary) => AISummaryEntry | undefined
   ): boolean {
     const entry = this.getAISummaryEntry(role, task);
     if (!entry?.content || entry.revision !== expectedRevision) {
       return false;
     }
-    const updated = update(entry);
+    const updated = update(entry, entry.content);
     if (updated && updated !== entry) {
       this.setAISummaryEntry(task.data.interactionId, role, updated);
     }
@@ -618,7 +618,23 @@ class StoreWrapper implements IStoreWrapper {
     expectedRevision: number,
     task: ITask = this.currentTask
   ): boolean =>
-    this.updateShownAISummary(role, expectedRevision, task, (entry) => editAISummaryContent(entry, key, value));
+    this.updateShownAISummary(role, expectedRevision, task, (entry, content) => {
+      const currentValue = key === 'summaryText' ? content.summaryText : content.sections?.[key];
+      if (currentValue === undefined) {
+        return undefined;
+      }
+      if (currentValue === value) {
+        return entry;
+      }
+      return {
+        ...entry,
+        content:
+          key === 'summaryText'
+            ? {...content, summaryText: value}
+            : {...content, sections: {...content.sections, [key]: value}},
+        edited: true,
+      };
+    });
 
   recordAISummaryCopied = (role: AISummaryRole, expectedRevision: number, task: ITask = this.currentTask): boolean =>
     this.updateShownAISummary(role, expectedRevision, task, (entry) => ({...entry, copied: entry.copied + 1}));

@@ -17,37 +17,6 @@ export const getAISummarySurface = (
   return 'omitted';
 };
 
-/**
- * Applies an edit to the entry's text or one of its sections. Returns the same entry when the value is
- * unchanged, and undefined when the field cannot be edited. Edits keep the revision: it only tracks which
- * summary was shown.
- */
-export const editAISummaryContent = (
-  entry: AISummaryEntry,
-  key: keyof AISummarySections | 'summaryText',
-  value: string
-): AISummaryEntry | undefined => {
-  const {content} = entry;
-  if (!content) {
-    return undefined;
-  }
-  const currentValue = key === 'summaryText' ? content.summaryText : content.sections?.[key];
-  if (currentValue === undefined) {
-    return undefined;
-  }
-  if (currentValue === value) {
-    return entry;
-  }
-  return {
-    ...entry,
-    content:
-      key === 'summaryText'
-        ? {...content, summaryText: value}
-        : {...content, sections: {...content.sections, [key]: value}},
-    edited: true,
-  };
-};
-
 // Like Agent Desktop: a received summary counts as viewed once and edits as a single flag. Without content the
 // response says whether the summary never arrived (the request failed) or the agent acted before it did.
 /** Composes a summary response, with a wrap-up code for the final post-call response. */

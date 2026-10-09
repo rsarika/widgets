@@ -432,12 +432,17 @@ interaction ID lets task cleanup remove them together; entries are created as ne
 - Edits, copies and feedback carry the displayed revision. Initiator/post-call feedback
   remains local until the response is sent; receiver feedback is sent immediately and
   displayed as selected after the SDK confirms it.
+- `editAISummary` updates the SDK content in the store entry directly, preserving its
+  other fields and received-section snapshot. An unchanged value is a no-op. The store's
+  shared mutation guard checks content and revision before an edit, copy or feedback update.
 - Structured responses contain only sections whose values differ from the received
   snapshot, matching Agent Desktop. An unchanged summary sends `{}`; a cleared section
   sends its key with `''`. Plain-text responses use the current SDK summary text.
   Receiver responses always use SDK `summaryText`, even when the same payload also
-  contains sections or an adaptive card. `src/ai-summary.ts` contains the edits,
-  lifecycle selector and a shared response composer; there is no payload normalizer.
+  contains sections or an adaptive card. `src/ai-summary.ts` contains the lifecycle
+  selector and one shared response composer. The composer derives the SDK submission
+  payload from the current entry when sending; no separate response object is kept in
+  the store. There is no payload normalizer or separate edit helper.
 - `getPostCallSummaryResponse` freezes the response before wrap-up removes the task.
   `sendPostCallSummaryResponse(response, task)` requires that original task to send it
   afterward, because `currentTask` may already refer to another interaction. It reports
