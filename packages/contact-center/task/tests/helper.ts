@@ -50,14 +50,6 @@ const onTaskSelected = jest.fn().mockImplementation(() => {});
 const logger = mockCC.LoggerProxy;
 const initialStoreLogger = store.store.logger;
 
-type AISummaryActionsSnapshot = ReturnType<typeof getAISummaryProps>;
-type TaskDataOverride = Partial<NonNullable<ITask['data']>> & {
-  interaction?: Partial<NonNullable<NonNullable<ITask['data']>['interaction']>>;
-};
-type AISummaryTaskOverrides = Partial<ITask> & {
-  data?: TaskDataOverride;
-};
-
 const AI_SUMMARY_INTERACTION_ID = 'interaction-main-1';
 
 const resetAISummaryStoreState = (): void => {
@@ -70,18 +62,15 @@ const resetAISummaryStoreState = (): void => {
   });
 };
 
-const createAISummaryTask = (overrides: AISummaryTaskOverrides = {}): ITask => {
+const createAISummaryTask = (overrides: Partial<ITask> = {}): ITask => {
   const baseTask = makeMockTask({
     data: {
-      agentId: 'agent1',
       interactionId: AI_SUMMARY_INTERACTION_ID,
       mediaResourceId: AI_SUMMARY_INTERACTION_ID,
       interaction: {
         interactionId: AI_SUMMARY_INTERACTION_ID,
         mainInteractionId: AI_SUMMARY_INTERACTION_ID,
-        mediaType: 'telephony',
         mediaChannel: 'telephony',
-        state: 'connected',
         owner: 'agent1',
         media: {
           [AI_SUMMARY_INTERACTION_ID]: {
@@ -93,8 +82,6 @@ const createAISummaryTask = (overrides: AISummaryTaskOverrides = {}): ITask => {
       },
     },
   });
-  const overrideData = overrides.data;
-
   return {
     ...baseTask,
     aiSummaryCapabilities: {midCallEnabled: true, postCallEnabled: true},
@@ -102,21 +89,12 @@ const createAISummaryTask = (overrides: AISummaryTaskOverrides = {}): ITask => {
     requestPostCallSummary: jest.fn().mockResolvedValue(aiSummaryFixtures.postCall.structured),
     sendMidCallSummaryResponse: jest.fn().mockResolvedValue(undefined),
     sendPostCallSummaryResponse: jest.fn().mockResolvedValue(undefined),
-    wrapup: jest.fn().mockResolvedValue(undefined),
     ...overrides,
-    data: {
-      ...baseTask.data,
-      ...overrideData,
-      interaction: {
-        ...baseTask.data.interaction,
-        ...overrideData?.interaction,
-      },
-    },
-  } as unknown as ITask;
+  };
 };
 
 const renderObservedAISummaryActions = (task: ITask) => {
-  let current: AISummaryActionsSnapshot = undefined;
+  let current: ReturnType<typeof getAISummaryProps> = undefined;
   const Probe = observer(({observedTask}: {observedTask: ITask}) => {
     current = getAISummaryProps(observedTask);
     return null;
@@ -277,11 +255,11 @@ describe('getAISummaryProps', () => {
   it('should call the store for every mid-call summary request', async () => {
     const task = createAISummaryTask();
     const requestSpy = jest.spyOn(store, 'requestMidCallSummary').mockResolvedValue(undefined);
-    const {result} = renderHook(() => getAISummaryProps(task));
+    const props = getAISummaryProps(task);
 
-    await result.current?.requestMidCallSummary?.('CONSULT');
-    await result.current?.requestMidCallSummary?.('CONSULT');
-    await result.current?.requestMidCallSummary?.('TRANSFER');
+    await props?.requestMidCallSummary?.('CONSULT');
+    await props?.requestMidCallSummary?.('CONSULT');
+    await props?.requestMidCallSummary?.('TRANSFER');
 
     expect(requestSpy).toHaveBeenCalledTimes(3);
     expect(requestSpy).toHaveBeenLastCalledWith('TRANSFER', task);
@@ -290,13 +268,13 @@ describe('getAISummaryProps', () => {
   it('should request the post-call summary only once per wrap-up', async () => {
     const task = createAISummaryTask();
     const requestSpy = jest.spyOn(store, 'requestPostCallSummary');
-    const {result} = renderHook(() => getAISummaryProps(task));
+    const props = getAISummaryProps(task);
 
     await act(async () => {
-      result.current?.requestPostCallSummary?.();
+      props?.requestPostCallSummary?.();
       await Promise.resolve();
     });
-    result.current?.requestPostCallSummary?.();
+    props?.requestPostCallSummary?.();
 
     expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(requestSpy).toHaveBeenCalledWith(task);

@@ -17,7 +17,6 @@ import {
   TARGET_TYPE,
   ParticipantDropAnnouncement,
   PendingParticipantDropRequest,
-  CallControlAISummaryProps,
 } from './task.types';
 import store, {
   TASK_EVENTS,
@@ -34,6 +33,7 @@ import store, {
 } from '@webex/cc-store';
 import type {AISummaryRole} from '@webex/cc-store';
 import {shouldShowWxAppTelephonyControls} from '@webex/cc-components';
+import type {CallControlAISummaryProps} from '@webex/cc-components';
 import {
   getTelephonyToastDisplay,
   reportWxAppTelephonyFailure,

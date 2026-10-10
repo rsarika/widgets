@@ -349,20 +349,17 @@ This module is the host-mount surface for the widget suite.
   floors.
 
 ## Test-Case Strategy (module)
-No tests exist for this package today (`tests/` is absent and `package.json` sets `passWithNoTests: true`).
-Because the module is pure aggregation, the highest-value tests would assert the distribution contract
-rather than widget behavior: (positive) importing `./wc` defines every expected `widget-cc-*` tag via
-`customElements.get`; (negative) importing `./wc` twice does not throw and does not redefine an element
-(idempotent guard). Secondary coverage: assert `index.ts` re-exports each expected symbol and `store`, and
-that each r2wc wrapper is created with the documented prop-type map. Widget rendering/behavior is owned and
-tested by the upstream widget packages, not here.
+`tests/wc.ai-summary.ts` covers the custom-element distribution contract: registered tags,
+CallControl and AI Assistant observed attributes, legacy CallControl prop forwarding, and
+the AI summary callback property's upgrade and connection lifecycle. Jest requires tests
+to be present. Widget rendering and behavior are tested by the upstream widget packages.
 
 | Behavior / Requirement | Existing test evidence | Gap |
 |---|---|---|
 | `cc-widgets-R-001` (React re-exports present) | None found | No test asserts the export barrel surface. |
-| `cc-widgets-R-002` (custom elements registered) | None found | No test asserts each `widget-cc-*` tag is defined after `./wc` import. |
+| `cc-widgets-R-002` (custom elements registered) | `tests/wc.ai-summary.ts` checks every registered tag after `./wc` import | None. |
 | `cc-widgets-R-003` (idempotent registration) | None found | No test for double-import / `customElements.get` guard. |
-| `cc-widgets-R-004` (r2wc prop-type map) | None found | No test asserts function/json/boolean/string prop mapping. |
+| `cc-widgets-R-004` (r2wc prop-type map) | `tests/wc.ai-summary.ts` checks CallControl prop forwarding and CallControl/AI Assistant observed attributes | Other wrappers and prop transforms are not asserted. |
 | `cc-widgets-R-005` (Momentum CSS imported) | None found | No test for the CSS side-effect import. |
 | `cc-widgets-R-006` (React/ReactDOM peers) | None found | Enforced by package manager only; no automated check here. |
 | `cc-widgets-R-007` (CallControlCAD inherits Drop without a new WC surface) | Covered by upstream task/component tests | No package-local test; the wrapper and prop map are unchanged. |
