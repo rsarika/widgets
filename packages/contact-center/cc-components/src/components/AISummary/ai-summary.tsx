@@ -1,5 +1,5 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import {Icon} from '@momentum-design/components/dist/react';
+import {Button, Icon, Spinner, Tooltip} from '@momentum-design/components/dist/react';
 import type {AISummaryEntry, AISummaryFeedback} from '@webex/cc-store';
 import {AI_SUMMARY_MESSAGES, AI_SUMMARY_SECTION_ORDER} from './ai-summary.constants';
 import {COPIED_FEEDBACK_MS} from '../AIAssistant/constants';
@@ -163,7 +163,8 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
   const [copied, setCopied] = useState(false);
   const [hoveredTooltip, setHoveredTooltip] = useState<AISummaryTooltipControl | null>(null);
   const [, scheduleFocusRestoration] = useState(0);
-  const feedbackDescriptionId = `ai-summary-feedback-${useReactId()}`;
+  const summaryId = useReactId();
+  const feedbackDescriptionId = `ai-summary-feedback-${summaryId}`;
 
   const contentRevision = props.contentRevision;
   const disabled = Boolean(props.controlsDisabled || props.requestPending);
@@ -292,7 +293,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
             {AI_SUMMARY_MESSAGES.generatingTitle}
           </h3>
           <p className="ai-summary__description">{AI_SUMMARY_MESSAGES.generatingDescription}</p>
-          <span className="ai-summary__spinner" aria-hidden="true" />
+          <Spinner className="ai-summary__spinner" size="small" aria-hidden="true" />
         </div>
       );
     }
@@ -312,15 +313,17 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
           </h3>
           <p className="ai-summary__description">{AI_SUMMARY_MESSAGES.generationErrorDescription}</p>
           {props.mode === 'post-call' ? (
-            <button
-              className="ai-summary__button"
+            <Button
+              className="ai-summary__retry-button"
               type="button"
+              variant="secondary"
+              size={28}
+              prefix-icon="refresh-regular"
               disabled={disabled}
-              onClick={() => void props.onRetry()}
+              onClick={disabled ? undefined : () => void props.onRetry()}
             >
-              <Icon name="refresh-regular" aria-hidden="true" />
               {AI_SUMMARY_MESSAGES.retry}
-            </button>
+            </Button>
           ) : null}
         </div>
       );
@@ -384,16 +387,21 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
   const showActions = props.state === 'content';
   const showSummaryHeading = props.mode === 'post-call' && props.state === 'content';
   const copyLabel = copied ? AI_SUMMARY_MESSAGES.copiedSummary : AI_SUMMARY_MESSAGES.copySummary;
+  // Keep visibility controlled so Escape dismisses the tooltip before the panel.
+  // Existing button labels and the pending-feedback description remain authoritative.
   const renderTooltip = (control: AISummaryTooltipControl, label: string) =>
     hoveredTooltip === control ? (
-      <span className="ai-summary__tooltip" role="tooltip">
+      <Tooltip
+        triggerID={`ai-summary-${summaryId}-${control}`}
+        offset={0}
+        placement="top"
+        tooltipType="none"
+        trigger="manual"
+        visible
+      >
         {label}
-      </span>
+      </Tooltip>
     ) : null;
-  const getActionClassName = (control: AISummaryTooltipControl, extraClassName?: string) =>
-    ['ai-summary__action', hoveredTooltip === control ? 'ai-summary__action--tooltip-open' : undefined, extraClassName]
-      .filter(Boolean)
-      .join(' ');
   const handleActionMouseEnter = (control: AISummaryTooltipControl) => {
     // Confirmation changes the copy button width and can retrigger pointer entry.
     if (!disabled && !(control === 'copy' && copied)) {
@@ -427,11 +435,12 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
         {showActions ? (
           <div className="ai-summary__actions" data-testid="ai-summary:actions">
             <span
-              className={getActionClassName('copy')}
+              className="ai-summary__action"
               onMouseEnter={() => handleActionMouseEnter('copy')}
               onMouseLeave={() => handleActionMouseLeave('copy')}
             >
               <button
+                id={`ai-summary-${summaryId}-copy`}
                 className={`ai-summary__button ai-summary__copy-button${
                   copied ? ' ai-summary__copy-button--confirmed' : ''
                 }`}
@@ -463,12 +472,13 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
 
                 return (
                   <span
-                    className={getActionClassName(feedback, 'ai-summary__feedback-action')}
+                    className="ai-summary__action ai-summary__feedback-action"
                     key={feedback}
                     onMouseEnter={() => handleActionMouseEnter(feedback)}
                     onMouseLeave={() => handleActionMouseLeave(feedback)}
                   >
                     <button
+                      id={`ai-summary-${summaryId}-${feedback}`}
                       className={`ai-summary__button ai-summary__feedback-button${
                         selected ? ' ai-summary__feedback-button--selected' : ''
                       }`}

@@ -222,6 +222,8 @@ describe('AISummary', () => {
       />
     );
 
+    const spinner = screen.getByTestId('ai-summary:generating').querySelector('mdc-spinner');
+    expect(spinner).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByText(AI_SUMMARY_MESSAGES.generatingDescription)).toBeInTheDocument();
     expect(screen.getByRole('heading', {name: AI_SUMMARY_MESSAGES.generatingTitle})).toHaveClass(
       'ai-summary__status-title--generating'
@@ -249,7 +251,7 @@ describe('AISummary', () => {
     expect(screen.getByText(AI_SUMMARY_MESSAGES.generationErrorDescription)).toBeInTheDocument();
   });
 
-  it('renders literal en-US labels and state copy without importing expected strings from the component constants', () => {
+  it('renders literal en-US labels and state copy without importing expected strings from the component constants', async () => {
     const {rerender} = render(
       <AISummary
         mode="post-call"
@@ -294,7 +296,7 @@ describe('AISummary', () => {
     );
     expect(screen.getByRole('heading', {name: LITERAL_SUMMARY_COPY.generationError})).toBeInTheDocument();
     expect(screen.getByText(LITERAL_SUMMARY_COPY.generationErrorDescription)).toBeInTheDocument();
-    expect(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).toBeInTheDocument();
+    expect(await screen.findByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).toBeInTheDocument();
 
     rerender(
       <AISummary
@@ -385,7 +387,7 @@ describe('AISummary', () => {
     ['mid-call-receiver', 'generating'],
     ['mid-call-receiver', 'unavailable'],
     ['mid-call-receiver', 'generic-error'],
-  ] as const)('renders a discriminating %s %s state', (mode, state) => {
+  ] as const)('renders a discriminating %s %s state', async (mode, state) => {
     const sharedCallbacks = {
       onEdit: jest.fn(),
       onCopy: jest.fn(),
@@ -446,7 +448,7 @@ describe('AISummary', () => {
       expect(screen.getByTestId('ai-summary:error')).toHaveTextContent(LITERAL_SUMMARY_COPY.generationError);
       expect(screen.getByTestId('ai-summary:error')).toHaveTextContent(LITERAL_SUMMARY_COPY.generationErrorDescription);
       if (mode === 'post-call') {
-        expect(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).toBeInTheDocument();
+        expect(await screen.findByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).toBeInTheDocument();
       } else {
         expect(screen.queryByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).not.toBeInTheDocument();
       }
@@ -1069,7 +1071,7 @@ describe('AISummary', () => {
     expect(dislike).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('exposes exact accessible feedback labels and visible hover tooltips', () => {
+  it('exposes exact accessible feedback labels and visible hover tooltips', async () => {
     render(
       <AISummary
         mode="post-call"
@@ -1088,21 +1090,30 @@ describe('AISummary', () => {
     expect(like).toHaveAttribute('aria-pressed', 'true');
     expect(like).not.toHaveAttribute('title');
     fireEvent.mouseEnter(getActionWrapper(like));
-    expect(screen.getAllByRole('tooltip')).toHaveLength(1);
-    expect(screen.getByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like})).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('tooltip', {hidden: true})).toHaveAttribute('visible'));
+    const feedbackTooltip = screen.getByRole('tooltip', {hidden: true});
+    expect(feedbackTooltip.tagName).toBe('MDC-TOOLTIP');
+    expect(feedbackTooltip).toHaveTextContent(AI_SUMMARY_MESSAGES.like);
+    expect(feedbackTooltip).toHaveAttribute('trigger', 'manual');
+    expect(feedbackTooltip).toHaveAttribute('triggerid', like.id);
+    expect(feedbackTooltip).toHaveAttribute('offset', '0');
+    expect(feedbackTooltip).toHaveAttribute('tooltip-type', 'none');
+    expect(like).toHaveAccessibleDescription(AI_SUMMARY_MESSAGES.feedback.pendingSubmission);
     fireEvent.mouseLeave(getActionWrapper(like));
-    expect(screen.queryByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like})).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip', {hidden: true})).not.toBeInTheDocument();
 
     const copy = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary});
     const dislike = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.dislike});
     expect(copy).not.toHaveAttribute('title');
     expect(dislike).not.toHaveAttribute('title');
     fireEvent.mouseEnter(getActionWrapper(copy));
-    expect(screen.getAllByRole('tooltip')).toHaveLength(1);
-    expect(screen.getByRole('tooltip', {name: AI_SUMMARY_MESSAGES.copySummary})).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('tooltip', {hidden: true})).toHaveAttribute('visible'));
+    expect(screen.getAllByRole('tooltip', {hidden: true})).toHaveLength(1);
+    expect(screen.getByRole('tooltip', {hidden: true})).toHaveTextContent(AI_SUMMARY_MESSAGES.copySummary);
+    expect(screen.getByRole('tooltip', {hidden: true})).toHaveAttribute('triggerid', copy.id);
   });
 
-  it('keeps action tooltips open while moving from trigger to tooltip wrapper', () => {
+  it('keeps action tooltips open while moving from trigger to tooltip wrapper', async () => {
     render(
       <AISummary
         mode="post-call"
@@ -1120,16 +1131,16 @@ describe('AISummary', () => {
     const like = screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like});
     const action = getActionWrapper(like);
     fireEvent.mouseEnter(action);
-    const tooltip = screen.getByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like});
+    const tooltip = await screen.findByRole('tooltip', {hidden: true});
     fireEvent.mouseLeave(like, {relatedTarget: tooltip});
-    expect(tooltip).toBeVisible();
+    await waitFor(() => expect(tooltip).toHaveAttribute('visible'));
     fireEvent.mouseEnter(tooltip);
-    expect(screen.getByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like})).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('tooltip', {hidden: true})).toHaveAttribute('visible'));
     fireEvent.mouseLeave(action);
-    expect(screen.queryByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like})).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip', {hidden: true})).not.toBeInTheDocument();
   });
 
-  it('dismisses action tooltips with Escape without moving focus', () => {
+  it('dismisses action tooltips with Escape without moving focus', async () => {
     const parentEscape = jest.fn();
     render(
       <div onKeyDown={parentEscape}>
@@ -1152,15 +1163,15 @@ describe('AISummary', () => {
       like.focus();
     });
     expect(like).toHaveFocus();
-    expect(screen.getByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like})).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('tooltip', {hidden: true})).toHaveAttribute('visible'));
 
     fireEvent.keyDown(like, {key: 'Escape'});
-    expect(screen.queryByRole('tooltip', {name: AI_SUMMARY_MESSAGES.like})).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip', {hidden: true})).not.toBeInTheDocument();
     expect(like).toHaveFocus();
     expect(parentEscape).not.toHaveBeenCalled();
   });
 
-  it('dismisses hover tooltips with Escape while focus remains outside the summary', () => {
+  it('dismisses hover tooltips with Escape while focus remains outside the summary', async () => {
     const parentEscape = jest.fn();
     const {unmount} = render(
       <div onKeyDown={parentEscape}>
@@ -1180,9 +1191,9 @@ describe('AISummary', () => {
     const external = screen.getByRole('button', {name: 'External control'});
     act(() => external.focus());
     fireEvent.mouseEnter(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like}));
-    expect(screen.getByRole('tooltip')).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('tooltip', {hidden: true})).toHaveAttribute('visible'));
     fireEvent.keyDown(external, {key: 'Escape'});
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip', {hidden: true})).not.toBeInTheDocument();
     expect(external).toHaveFocus();
     expect(parentEscape).not.toHaveBeenCalled();
 
@@ -1209,7 +1220,7 @@ describe('AISummary', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', {name: LITERAL_SUMMARY_COPY.retry}));
+    fireEvent.click(await screen.findByRole('button', {name: LITERAL_SUMMARY_COPY.retry}));
     await flushSettledCallbacks();
     expect(onRetry).toHaveBeenCalledTimes(1);
 
@@ -1229,6 +1240,46 @@ describe('AISummary', () => {
 
     expect(screen.queryByRole('button', {name: LITERAL_SUMMARY_COPY.retry})).not.toBeInTheDocument();
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the shared Retry button while a request is pending', async () => {
+    const onRetry = jest.fn().mockResolvedValue({outcome: 'blocked'});
+    render(
+      <AISummary
+        mode="post-call"
+        state="generic-error"
+        contentRevision={51}
+        requestPending
+        onEdit={jest.fn()}
+        onCopy={jest.fn()}
+        onFeedback={jest.fn()}
+        onRetry={onRetry}
+      />
+    );
+
+    const retry = await screen.findByRole('button', {name: LITERAL_SUMMARY_COPY.retry});
+    expect(retry.tagName).toBe('MDC-BUTTON');
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('recovers panel focus when the shared Retry button is removed', async () => {
+    const props = {
+      mode: 'post-call',
+      contentRevision: 51,
+      onEdit: jest.fn(),
+      onCopy: jest.fn(),
+      onFeedback: jest.fn(),
+      onRetry: jest.fn().mockResolvedValue({outcome: 'blocked'}),
+    } as const;
+    const {rerender} = render(<AISummary {...props} state="generic-error" />);
+    const retry = await screen.findByRole('button', {name: LITERAL_SUMMARY_COPY.retry});
+    act(() => retry.focus());
+    expect(retry).toHaveFocus();
+
+    rerender(<AISummary {...props} state="generating" />);
+    expect(screen.getByTestId('ai-summary:test-panel')).toHaveFocus();
   });
 
   it('uses synchronous receiver copy text without card JSON or editable content props', async () => {

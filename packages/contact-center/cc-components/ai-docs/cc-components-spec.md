@@ -375,6 +375,12 @@ labels, plain-text clipboard formatting, bullet presentation and auto-sizing nat
 editors belong to this component; edits, copy counts, feedback and submission belong
 to the store's actions and separate SDK response record.
 
+Summary loading, Retry and tooltip presentation use the same Momentum primitives as
+Real-time Assist and Wellness Break. Tooltip visibility remains controlled to keep
+hovered content reachable and consume Escape before the containing panel handles it;
+button labels and the pending-feedback description remain unchanged. Keyed editing,
+clipboard formatting, revision acceptance and focus recovery stay summary-specific.
+
 `AIAssistantComponent.receiverSummary` adds View summary to closed/minimized chrome
 and opens the receiver branch independently of Real-time Assist enablement. Copy uses
 rendered card text through the existing Adaptive Card text extractor. The renderer
