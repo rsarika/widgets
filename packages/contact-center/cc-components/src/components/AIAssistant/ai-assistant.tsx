@@ -1,4 +1,4 @@
-import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {Button, Text, Tooltip} from '@momentum-design/components/dist/react';
 import {withMetrics} from '@webex/cc-ui-logging';
 import RealTimeAssist from './RealTimeAssist/real-time-assist';
@@ -23,112 +23,13 @@ const isWellnessOverlayPhase = (phase: WellnessBreakViewModel['phase']): phase i
 
 let assistantHeaderSequence = 0;
 
-type ReceiverCardRenderState = 'pending' | 'ready' | 'fallback';
-
 const FOCUSABLE_SELECTOR = 'button, [href], input, textarea, select, [tabindex], [role="button"], mdc-button';
 
-const isEnabledFocusTarget = (element: HTMLElement): boolean =>
-  !element.hasAttribute('disabled') &&
-  element.getAttribute('aria-disabled') !== 'true' &&
-  element.tabIndex >= 0 &&
-  element.isConnected;
-
-const isConnectedFocusTarget = (element: HTMLElement): boolean =>
-  !element.hasAttribute('disabled') && element.getAttribute('aria-disabled') !== 'true' && element.isConnected;
-
 const getEnabledFocusTargets = (root: HTMLElement): HTMLElement[] =>
-  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isEnabledFocusTarget);
-
-const isReceiverDisplayActionNode = (value: unknown): boolean => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  const type = (value as Record<string, unknown>).type;
-  return typeof type === 'string' && (type === 'ActionSet' || type.startsWith('Action.'));
-};
-
-const projectReceiverDisplayCard = (card: unknown): unknown => {
-  if (Array.isArray(card)) {
-    return card
-      .map(projectReceiverDisplayCard)
-      .filter((item) => item !== undefined && !isReceiverDisplayActionNode(item));
-  }
-  if (!card || typeof card !== 'object') {
-    return card;
-  }
-  if (isReceiverDisplayActionNode(card)) {
-    return undefined;
-  }
-  const projected: Record<string, unknown> = {};
-  Object.entries(card as Record<string, unknown>).forEach(([key, value]) => {
-    if (key === 'actions' || key === 'selectAction') {
-      return;
-    }
-    const nextValue = projectReceiverDisplayCard(value);
-    if (nextValue !== undefined) {
-      projected[key] = nextValue;
-    }
-  });
-  return projected;
-};
-
-const pushNonEmptyText = (texts: string[], value: unknown) => {
-  if (typeof value !== 'string') {
-    return;
-  }
-  const trimmed = value.trim();
-  if (trimmed) {
-    texts.push(trimmed);
-  }
-};
-
-const extractReceiverDisplayCardText = (node: unknown): string => {
-  const texts: string[] = [];
-
-  const visit = (value: unknown) => {
-    if (typeof value === 'string') {
-      pushNonEmptyText(texts, value);
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== 'object') {
-      return;
-    }
-
-    const record = value as Record<string, unknown>;
-    switch (record.type) {
-      case 'TextBlock':
-      case 'TextRun':
-        pushNonEmptyText(texts, record.text);
-        break;
-      case 'RichTextBlock':
-        visit(record.inlines);
-        break;
-      case 'FactSet':
-        if (Array.isArray(record.facts)) {
-          record.facts.forEach((fact) => {
-            if (!fact || typeof fact !== 'object') {
-              return;
-            }
-            const factRecord = fact as Record<string, unknown>;
-            pushNonEmptyText(texts, factRecord.title);
-            pushNonEmptyText(texts, factRecord.value);
-          });
-        }
-        break;
-      default:
-        break;
-    }
-
-    ['body', 'items', 'columns', 'rows', 'cells'].forEach((key) => visit(record[key]));
-  };
-
-  visit(node);
-  return texts.join('\n');
-};
+  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) =>
+      !element.hasAttribute('disabled') && element.getAttribute('aria-disabled') !== 'true' && element.tabIndex >= 0
+  );
 
 const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   chrome,
@@ -166,15 +67,13 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   });
   // The receiver summary branch the agent opened; real-time assist shows otherwise.
   const [viewingReceiverKey, setViewingReceiverKey] = useState<string | null>(null);
-  const [receiverCardRenderState, setReceiverCardRenderState] = useState<ReceiverCardRenderState>('pending');
+  const [receiverCardReady, setReceiverCardReady] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const receiverBranchRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const lastFocusSuccessorRef = useRef<HTMLElement | null>(null);
   const pendingReceiverActivationFocusRef = useRef(false);
-  const previousShowReceiverSummaryRef = useRef(false);
-  const previousReceiverActionsVisibleRef = useRef(false);
   // Fullscreen is consumer-owned: we emit onFullScreenToggle; the host owns layout.
   const wellnessOverlayPhase = wellness && isWellnessOverlayPhase(wellness.phase) ? wellness.phase : undefined;
   const rootClass = [
@@ -193,15 +92,8 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   );
   const showLanding = !showReceiverSummary && (!hasActiveInteraction || !isFeatureEnabled);
   const receiverBranchKey = receiverSummary?.branchKey;
-  const receiverContentRevision = receiverSummary?.surface === 'content' ? receiverSummary.contentRevision : undefined;
-  const receiverAdaptiveCard =
-    receiverSummary?.surface === 'content' ? receiverSummary.content.adaptiveCard : undefined;
-  const receiverDisplayCard = useMemo(
-    () => (receiverAdaptiveCard === undefined ? undefined : projectReceiverDisplayCard(receiverAdaptiveCard)),
-    [receiverAdaptiveCard]
-  );
   const receiverActionsVisible = Boolean(
-    showReceiverSummary && receiverSummary?.surface === 'content' && receiverCardRenderState === 'ready'
+    showReceiverSummary && receiverSummary?.surface === 'content' && receiverCardReady
   );
 
   const wellnessHistory = wellness?.history ?? [];
@@ -254,7 +146,12 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
   }, [viewingReceiverKey, receiverBranchKey]);
 
   const focusTarget = (target: HTMLElement | null | undefined): boolean => {
-    if (!target || !isConnectedFocusTarget(target)) {
+    if (
+      !target ||
+      !target.isConnected ||
+      target.hasAttribute('disabled') ||
+      target.getAttribute('aria-disabled') === 'true'
+    ) {
       return false;
     }
     // Momentum reflects its default tab stop asynchronously after connection.
@@ -303,33 +200,20 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
     clearReceiverFocusSnapshot();
   };
 
+  // Recover only when the previously focused control was removed. Connected
+  // controls and focus outside the assistant keep their current focus.
   useLayoutEffect(() => {
-    if (!pendingReceiverActivationFocusRef.current || chrome !== 'open' || !showReceiverSummary) {
+    if (pendingReceiverActivationFocusRef.current && chrome === 'open' && showReceiverSummary) {
+      pendingReceiverActivationFocusRef.current = false;
+      recoverReceiverFocus(true);
       return;
     }
-    pendingReceiverActivationFocusRef.current = false;
-    recoverReceiverFocus(true);
-  });
-
-  useLayoutEffect(() => {
-    const previousShowReceiverSummary = previousShowReceiverSummaryRef.current;
-    previousShowReceiverSummaryRef.current = showReceiverSummary;
-    if (previousShowReceiverSummary && !showReceiverSummary) {
-      recoverReceiverFocus(false);
-    }
-  });
-
-  useLayoutEffect(() => {
-    const previousReceiverActionsVisible = previousReceiverActionsVisibleRef.current;
-    previousReceiverActionsVisibleRef.current = receiverActionsVisible;
-    if (previousReceiverActionsVisible && !receiverActionsVisible) {
-      recoverReceiverFocus(false);
-    }
-  });
-
-  useLayoutEffect(() => {
     const focused = lastFocusedElementRef.current;
-    if (chrome === 'open' || !focused || focused.isConnected) {
+    if (!focused || focused.isConnected) {
+      return;
+    }
+    if (chrome === 'open') {
+      recoverReceiverFocus(false);
       return;
     }
     const activeElement = document.activeElement;
@@ -345,32 +229,6 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
     clearReceiverFocusSnapshot();
   });
 
-  useLayoutEffect(() => {
-    if (!showReceiverSummary || receiverSummary?.surface !== 'content') {
-      return undefined;
-    }
-    const branch = receiverBranchRef.current;
-    if (!branch) {
-      return undefined;
-    }
-
-    const updateReceiverCardRenderState = () => {
-      const hasFallback = Boolean(branch.querySelector('[data-testid="ai-assistant:adaptive-card-fallback"]'));
-      const cardHost = branch.querySelector<HTMLElement>('.ai-assistant__card-host');
-      const hasRenderedContent = Boolean(cardHost && cardHost.childElementCount > 0);
-      const nextState: ReceiverCardRenderState = hasFallback ? 'fallback' : hasRenderedContent ? 'ready' : 'pending';
-      setReceiverCardRenderState((current) => (current === nextState ? current : nextState));
-    };
-
-    updateReceiverCardRenderState();
-    if (typeof MutationObserver === 'undefined') {
-      return undefined;
-    }
-    const observer = new MutationObserver(updateReceiverCardRenderState);
-    observer.observe(branch, {childList: true, subtree: true});
-    return () => observer.disconnect();
-  }, [chrome, receiverContentRevision, receiverSummary?.surface, showReceiverSummary]);
-
   const handleRootFocusCapture = (event: React.FocusEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
@@ -379,8 +237,7 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
     const controls = rootRef.current ? getEnabledFocusTargets(rootRef.current) : [];
     const index = controls.indexOf(target);
     lastFocusedElementRef.current = target;
-    lastFocusSuccessorRef.current =
-      index >= 0 ? (controls.slice(index + 1).find((control) => control !== target) ?? null) : null;
+    lastFocusSuccessorRef.current = index >= 0 ? (controls[index + 1] ?? null) : null;
   };
 
   const openRealTimeAssist = () => {
@@ -428,7 +285,9 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
         {receiverSummary.surface === 'content' ? (
           <div dir="auto">
             <AdaptiveCardRenderer
-              card={receiverDisplayCard}
+              card={receiverSummary.content.adaptiveCard}
+              displayOnly
+              onRender={setReceiverCardReady}
               contentRevision={receiverSummary.contentRevision}
               fallbackText={AI_SUMMARY_MESSAGES.unavailable}
               logger={logger}
@@ -443,14 +302,7 @@ const AIAssistantComponent: React.FC<AIAssistantComponentProps> = ({
             requestPending={receiverSummary.feedbackPending}
             selectedFeedback={receiverSummary.selectedFeedback}
             contentRevision={receiverSummary.contentRevision}
-            getReceiverCopyText={() => {
-              const renderedText = receiverBranchRef.current ? extractCardText(receiverBranchRef.current).trim() : '';
-              const text = renderedText || extractReceiverDisplayCardText(receiverDisplayCard).trim();
-              if (!text) {
-                throw new Error('Receiver summary has no visible copy text.');
-              }
-              return text;
-            }}
+            getReceiverCopyText={() => (receiverBranchRef.current ? extractCardText(receiverBranchRef.current) : '')}
             onCopy={receiverSummary.recordReceiverSummaryCopied}
             onFeedback={receiverSummary.setReceiverSummaryFeedback}
           />

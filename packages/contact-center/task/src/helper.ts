@@ -30,11 +30,9 @@ import store, {
   findMediaResourceId,
   MEDIA_TYPE_TELEPHONY_LOWER,
   RealTimeTranscriptionData,
-  AISummaryFeedback,
-  AISummaryRole,
-  AISummarySections,
   getAISummarySurface,
 } from '@webex/cc-store';
+import type {AISummaryRole} from '@webex/cc-store';
 import {shouldShowWxAppTelephonyControls} from '@webex/cc-components';
 import {
   getTelephonyToastDisplay,
@@ -512,7 +510,7 @@ export const getAISummaryProps = (currentTask?: ITask): CallControlAISummaryProp
   }
 
   const entries = store.aiSummaries[currentTask.data.interactionId];
-  const viewOf = (role: Exclude<AISummaryRole, 'receiver'>) => {
+  const viewOf = (role: Exclude<AISummaryRole, 'receiver'>): NonNullable<CallControlAISummaryProps['midCall']> => {
     const entry = entries?.[role];
     return {
       state: getAISummarySurface(entry),
@@ -520,10 +518,9 @@ export const getAISummaryProps = (currentTask?: ITask): CallControlAISummaryProp
       contentRevision: entry?.revision ?? 0,
       selectedFeedback: entry?.response.feedback ?? 'none',
       requestPending: entry?.status === 'loading',
-      onEdit: (key: keyof AISummarySections | 'summaryText', value: string, expectedRevision: number) =>
-        store.editAISummary(role, key, value, expectedRevision, currentTask),
-      onCopy: (expectedRevision: number) => store.recordAISummaryCopied(role, expectedRevision, currentTask),
-      onFeedback: (feedback: Exclude<AISummaryFeedback, 'none'>, expectedRevision: number) =>
+      onEdit: (key, value, expectedRevision) => store.editAISummary(role, key, value, expectedRevision, currentTask),
+      onCopy: (expectedRevision) => store.recordAISummaryCopied(role, expectedRevision, currentTask),
+      onFeedback: (feedback, expectedRevision) =>
         store.setAISummaryFeedback(role, feedback, expectedRevision, currentTask),
     };
   };
@@ -1301,7 +1298,7 @@ export const useCallControl = (props: useCallControlProps) => {
         // Taken before wrap-up: the task and its summary are removed once wrap-up completes.
         const summaryResponse = store.getPostCallSummaryResponse(wrapUpReason, currentTask);
 
-        await currentTask.wrapup({wrapUpReason: wrapUpReason, auxCodeId: auxCodeId});
+        await currentTask.wrapup({wrapUpReason, auxCodeId});
         const taskKeys = Object.keys(store.taskList);
         if (taskKeys.length > 0) {
           store.setCurrentTask(store.taskList[taskKeys[0]]);

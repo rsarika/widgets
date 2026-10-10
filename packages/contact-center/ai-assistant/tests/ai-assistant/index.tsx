@@ -107,6 +107,29 @@ const deferred = <T,>(): {
 };
 
 describe('AIAssistant widget', () => {
+  const innerText = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
+
+  beforeAll(() => {
+    // Adaptive Cards writes plain text through innerText, which jsdom does not implement.
+    Object.defineProperty(HTMLElement.prototype, 'innerText', {
+      configurable: true,
+      get() {
+        return this.textContent;
+      },
+      set(value: string) {
+        this.textContent = value;
+      },
+    });
+  });
+
+  afterAll(() => {
+    if (innerText) {
+      Object.defineProperty(HTMLElement.prototype, 'innerText', innerText);
+    } else {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).innerText;
+    }
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     jest.restoreAllMocks();
@@ -227,7 +250,7 @@ describe('AIAssistant widget', () => {
     fireEvent.click(screen.getByTestId('ai-assistant:view-summary'));
     fireEvent.click(await screen.findByRole('button', {name: 'Copy Summary'}));
 
-    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Receiver summary'));
     expect(storeMock.recordAISummaryCopied).toHaveBeenCalledWith('receiver', 7, storeMock.currentTask);
 
     fireEvent.click(screen.getByRole('button', {name: 'This is helpful'}));

@@ -9,52 +9,11 @@ import {DigitalChannels} from '@webex/cc-digital-channels';
 import {AIAssistant} from '@webex/cc-ai-assistant';
 
 type AISummaryStatusCallback = NonNullable<CallControlProps['onAISummaryStatusChange']>;
-type WebCallControlAdapterProps = Omit<CallControlProps, 'onAISummaryStatusChange'> & {
-  container?: HTMLElement;
-};
-type UseSyncExternalStore = <Snapshot>(
-  subscribe: (callback: () => void) => () => void,
-  getSnapshot: () => Snapshot,
-  getServerSnapshot: () => Snapshot
-) => Snapshot;
 
-const aiSummaryStatusCallbacks = new WeakMap<HTMLElement, AISummaryStatusCallback>();
-const aiSummaryStatusSubscribers = new WeakMap<HTMLElement, Set<() => void>>();
-const useSyncExternalStore = (React as typeof React & {useSyncExternalStore: UseSyncExternalStore})
-  .useSyncExternalStore;
-
-const subscribeAISummaryStatusCallback = (element: HTMLElement | undefined, callback: () => void) => {
-  if (!element) {
-    return () => undefined;
-  }
-
-  const subscribers = aiSummaryStatusSubscribers.get(element) ?? new Set<() => void>();
-  subscribers.add(callback);
-  aiSummaryStatusSubscribers.set(element, subscribers);
-
-  return () => {
-    subscribers.delete(callback);
-    if (subscribers.size === 0) {
-      aiSummaryStatusSubscribers.delete(element);
-    }
-  };
-};
-
-const notifyAISummaryStatusCallbackSubscribers = (element: HTMLElement) => {
-  aiSummaryStatusSubscribers.get(element)?.forEach((callback) => callback());
-};
-
-const getAISummaryStatusCallback = (element: HTMLElement | undefined) =>
-  element ? aiSummaryStatusCallbacks.get(element) : undefined;
-
-const CallControlWebComponentAdapter: React.FC<WebCallControlAdapterProps> = ({container, ...props}) => {
-  const onAISummaryStatusChange = useSyncExternalStore(
-    (callback) => subscribeAISummaryStatusCallback(container, callback),
-    () => getAISummaryStatusCallback(container),
-    () => getAISummaryStatusCallback(container)
-  );
-
-  return React.createElement(CallControl, {...props, onAISummaryStatusChange});
+const CallControlWebComponentAdapter: React.FC<CallControlProps & {container?: HTMLElement}> = (props) => {
+  const callControlProps = {...props};
+  delete callControlProps.container;
+  return React.createElement(CallControl, callControlProps);
 };
 
 const WebUserState = r2wc(UserState, {
@@ -94,10 +53,23 @@ const WebCallControlBase = r2wc(CallControlWebComponentAdapter, {
     onWrapUp: 'function',
     onRecordingToggle: 'function',
     conferenceEnabled: 'boolean',
+    // No transform: r2wc forwards property assignments without attribute conversion or reflection.
+    onAISummaryStatusChange: undefined,
   },
-});
+}) as CustomElementConstructor & {observedAttributes: string[]};
 
-class WebCallControl extends (WebCallControlBase as {new (): HTMLElement}) {
+const statusCallbackProperty = Object.getOwnPropertyDescriptor(
+  WebCallControlBase.prototype,
+  'onAISummaryStatusChange'
+)!;
+
+class WebCallControl extends WebCallControlBase {
+  static get observedAttributes(): string[] {
+    return WebCallControlBase.observedAttributes.filter(
+      (attribute) => attribute.toLowerCase() !== 'on-aisummary-status-change'
+    );
+  }
+
   constructor() {
     super();
 
@@ -110,7 +82,7 @@ class WebCallControl extends (WebCallControlBase as {new (): HTMLElement}) {
   }
 
   get onAISummaryStatusChange(): AISummaryStatusCallback | undefined {
-    return getAISummaryStatusCallback(this);
+    return statusCallbackProperty.get!.call(this) as AISummaryStatusCallback | undefined;
   }
 
   set onAISummaryStatusChange(value: AISummaryStatusCallback | undefined) {
@@ -118,12 +90,7 @@ class WebCallControl extends (WebCallControlBase as {new (): HTMLElement}) {
       throw new TypeError('onAISummaryStatusChange must be a function or undefined');
     }
 
-    if (value) {
-      aiSummaryStatusCallbacks.set(this, value);
-    } else {
-      aiSummaryStatusCallbacks.delete(this);
-    }
-    notifyAISummaryStatusCallbackSubscribers(this);
+    statusCallbackProperty.set!.call(this, value);
   }
 }
 

@@ -1,15 +1,12 @@
-import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {useLayoutEffect, useRef, useState} from 'react';
 import {RadioGroupNext as RadioGroup, TextInput} from '@momentum-ui/react-collaboration';
-import {Icon} from '@momentum-design/components/dist/react';
+import {Button, Icon} from '@momentum-design/components/dist/react';
 import AISummary, {AI_SUMMARY_MESSAGES} from '../../../AISummary';
 import {CLEAR_SEARCH, WRAP_UP_INTERACTION} from '../../constants';
-import {WrapUpSummaryProps, WrapUpSummaryReason} from '../../task.types';
+import type {WrapUpSummaryProps} from '../../task.types';
 import './wrap-up-summary.styles.scss';
 
 const useReactId = (React as typeof React & {useId: () => string}).useId;
-
-const reasonMatchesQuery = (reason: WrapUpSummaryReason, query: string): boolean =>
-  reason.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
 
 const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   reasons,
@@ -23,38 +20,20 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
   const [query, setQuery] = useState('');
   const wrapUpPanelRef = useRef<HTMLElement | null>(null);
   const summaryFocusedControlRef = useRef<HTMLElement | null>(null);
-  const previousSummaryVisibleRef = useRef(false);
   const selectedReason = reasons.find((reason) => reason.id === selectedReasonId);
-  const filteredReasons = useMemo(
-    () => reasons.filter((reason) => reasonMatchesQuery(reason, query)),
-    [query, reasons]
-  );
-  const summaryVisible = Boolean(summary && summary.state !== 'omitted');
-
-  const clearSummaryFocusSnapshot = () => {
-    summaryFocusedControlRef.current = null;
-  };
-
-  const restoreSummaryRemovalFocus = () => {
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement && activeElement !== document.body && activeElement.isConnected) {
-      clearSummaryFocusSnapshot();
-      return;
-    }
-    const focusedSummaryControl = summaryFocusedControlRef.current;
-    if (focusedSummaryControl && !focusedSummaryControl.isConnected) {
-      wrapUpPanelRef.current?.focus();
-    }
-    clearSummaryFocusSnapshot();
-  };
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredReasons = reasons.filter((reason) => reason.name.toLocaleLowerCase().includes(normalizedQuery));
 
   useLayoutEffect(() => {
-    const previousSummaryVisible = previousSummaryVisibleRef.current;
-    previousSummaryVisibleRef.current = summaryVisible;
-    if (previousSummaryVisible && !summaryVisible) {
-      restoreSummaryRemovalFocus();
+    const focusedSummaryControl = summaryFocusedControlRef.current;
+    if (!focusedSummaryControl || focusedSummaryControl.isConnected) return;
+
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement) || activeElement === document.body || !activeElement.isConnected) {
+      wrapUpPanelRef.current?.focus();
     }
-  }, [summaryVisible]);
+    summaryFocusedControlRef.current = null;
+  });
 
   const handleSummaryFocusCapture = (event: React.FocusEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -120,18 +99,11 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
             onFocusCapture={handleSummaryFocusCapture}
           >
             <AISummary
+              {...summary}
               mode="post-call"
               state={summary.state}
-              content={summary.content}
-              contentRevision={summary.contentRevision}
-              selectedFeedback={summary.selectedFeedback}
-              requestPending={summary.requestPending}
               // The final response is taken when completion starts, so later edits would not be submitted.
               controlsDisabled={completionPending}
-              onEdit={summary.onEdit}
-              onCopy={summary.onCopy}
-              onFeedback={summary.onFeedback}
-              onRetry={summary.onRetry}
               containingPanelFocusTarget={wrapUpPanelRef}
             />
           </div>
@@ -139,16 +111,17 @@ const WrapUpSummary: React.FC<WrapUpSummaryProps> = ({
       </div>
       <div className="wrap-up-summary__actions">
         {/* As in Agent Desktop, a summary that is still generating does not hold back wrap-up. */}
-        <button
+        <Button
           type="button"
-          className="wrap-up-summary__complete"
+          variant="primary"
+          size={32}
           disabled={!selectedReason || completionPending}
           aria-label={AI_SUMMARY_MESSAGES.postCall.completeAction}
           title={AI_SUMMARY_MESSAGES.postCall.completeAction}
-          onClick={() => selectedReason && onComplete(selectedReason)}
+          onClick={selectedReason && !completionPending ? () => onComplete(selectedReason) : undefined}
         >
           {AI_SUMMARY_MESSAGES.postCall.completeAction}
-        </button>
+        </Button>
       </div>
     </section>
   );

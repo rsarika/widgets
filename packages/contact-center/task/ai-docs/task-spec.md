@@ -560,7 +560,9 @@ store summary entries into optional mid-call and post-call views with store call
 It reads `task.aiSummaryCapabilities` directly, with no additional media-type filter,
 and supplies no summary props when both capabilities are disabled. Each view receives
 the entry's raw SDK content, which can be absent during generation or failure, and
-confirmed feedback from `entry.response.feedback`.
+confirmed feedback from `entry.response.feedback`. Callback types derive from the
+component view props; the adapter forwards arguments to store actions without
+constructing a second summary or response model.
 
 Opening consult/transfer requests the corresponding mid-call summary. `consultCall`
 and `transferCall` send the initiator response through the store as the existing SDK

@@ -242,6 +242,10 @@ export interface AIAssistantActionEvent {
 
 export interface AdaptiveCardRendererProps {
   card: unknown;
+  /** Render summary content without card-provided actions or inputs. */
+  displayOnly?: boolean;
+  /** Reports whether card content rendered, so the container can show its controls. */
+  onRender?: (rendered: boolean) => void;
   /** Receiver summary revision; resets a failed card when a replacement summary arrives. */
   contentRevision?: number;
   /** Title already rendered by RealTimeAssist; removes the matching header embedded in backend cards. */

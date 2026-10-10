@@ -70,7 +70,7 @@ describe('WrapUpSummary', () => {
     });
   });
 
-  it('renders named reason search and radio group with the stable complete action', () => {
+  it('renders named reason search and radio group with the stable complete action', async () => {
     render(
       <WrapUpSummary reasons={reasons} summary={createSummary()} onReasonChange={jest.fn()} onComplete={jest.fn()} />
     );
@@ -90,7 +90,7 @@ describe('WrapUpSummary', () => {
     );
     expect(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME})).toBeInTheDocument();
     expect(AI_SUMMARY_MESSAGES.postCall.completeAction).toBe(COMPLETE_WRAP_UP_LABEL);
-    const complete = screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
+    const complete = await screen.findByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
     expect(complete).toBeDisabled();
     expect(complete).toHaveTextContent(COMPLETE_WRAP_UP_LABEL);
     expect(complete).toHaveAttribute('title', COMPLETE_WRAP_UP_LABEL);
@@ -171,7 +171,7 @@ describe('WrapUpSummary', () => {
     expect(screen.getByRole('radio', {name: 'Follow up needed'})).toBeChecked();
   });
 
-  it('should not hold back Complete Wrap-Up while the summary is generating', () => {
+  it('should not hold back Complete Wrap-Up while the summary is generating', async () => {
     const onComplete = jest.fn();
     render(
       <WrapUpSummary
@@ -183,11 +183,11 @@ describe('WrapUpSummary', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL}));
+    fireEvent.click(await screen.findByRole('button', {name: COMPLETE_WRAP_UP_LABEL}));
     expect(onComplete).toHaveBeenCalledWith({id: 'aux-1', name: 'Resolved'});
   });
 
-  it('keeps a retained draft completable during regeneration without rendering an absent Outcome', () => {
+  it('keeps a retained draft completable during regeneration without rendering an absent Outcome', async () => {
     const onComplete = jest.fn();
     const retainedDraft = createSummary({
       requestPending: true,
@@ -212,7 +212,7 @@ describe('WrapUpSummary', () => {
 
     expect(screen.queryByText(AI_SUMMARY_MESSAGES.sectionLabels.resolution)).not.toBeInTheDocument();
     expect(screen.getByText('Edited summary survives.')).toBeInTheDocument();
-    const complete = screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
+    const complete = await screen.findByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
     expect(complete).not.toBeDisabled();
 
     fireEvent.click(complete);
@@ -232,7 +232,8 @@ describe('WrapUpSummary', () => {
     expect(screen.getByText(AI_SUMMARY_MESSAGES.feedback.pendingSubmission)).toBeInTheDocument();
   });
 
-  it('should keep the reasons and summary read-only while wrap-up completion is in progress', () => {
+  it('should keep the reasons and summary read-only while wrap-up completion is in progress', async () => {
+    const onComplete = jest.fn();
     const renderPanel = (completionPending: boolean) => (
       <WrapUpSummary
         reasons={reasons}
@@ -240,7 +241,7 @@ describe('WrapUpSummary', () => {
         selectedReasonId="aux-1"
         completionPending={completionPending}
         onReasonChange={jest.fn()}
-        onComplete={jest.fn()}
+        onComplete={onComplete}
       />
     );
     const {rerender} = render(renderPanel(false));
@@ -253,7 +254,10 @@ describe('WrapUpSummary', () => {
 
     expect(editInitialReason).toBeDisabled();
     expect(screen.getByRole('button', {name: AI_SUMMARY_MESSAGES.like})).toBeDisabled();
-    expect(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL})).toBeDisabled();
+    const complete = await screen.findByRole('button', {name: COMPLETE_WRAP_UP_LABEL});
+    expect(complete).toBeDisabled();
+    fireEvent.click(complete);
+    expect(onComplete).not.toHaveBeenCalled();
     expect(screen.getByRole('radiogroup', {name: REASON_GROUP_NAME}).parentElement).toHaveAttribute(
       'aria-disabled',
       'true'
@@ -280,7 +284,7 @@ describe('WrapUpSummary', () => {
     expect(screen.queryByTestId('wrap-up-summary:body')).not.toBeInTheDocument();
   });
 
-  it('bounds reason and summary scrolling while keeping panel chrome outside the scroll regions', () => {
+  it('bounds reason and summary scrolling while keeping panel chrome outside the scroll regions', async () => {
     const removeStyles = installWrapUpSummaryStyles();
     try {
       const manyReasons = Array.from({length: 12}, (_, index) => ({
@@ -322,7 +326,7 @@ describe('WrapUpSummary', () => {
         panel.querySelector('.wrap-up-summary__reason-group'),
         screen.getByTestId('ai-summary:content'),
       ]);
-      expect(screen.getByRole('button', {name: COMPLETE_WRAP_UP_LABEL})).toBeInTheDocument();
+      expect(await screen.findByRole('button', {name: COMPLETE_WRAP_UP_LABEL})).toBeInTheDocument();
     } finally {
       removeStyles();
     }

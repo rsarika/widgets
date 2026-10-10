@@ -183,24 +183,6 @@
   margin-block-start: auto;
 }
 
-.wrap-up-summary__complete {
-  background: var(--mds-color-theme-background-inverted-normal, #1b1c1d);
-  border: 0;
-  border-radius: 999px;
-  color: var(--mds-color-theme-text-inverted-normal, #fff);
-  cursor: pointer;
-  font: inherit;
-  font-size: 1rem;
-  line-height: 1.5;
-  padding: 0.25rem 0.75rem;
-}
-
-.wrap-up-summary__complete:disabled {
-  background: var(--mds-color-theme-background-secondary-normal, #e9eaed);
-  color: var(--mds-color-theme-text-disabled-normal, #6f7378);
-  cursor: not-allowed;
-}
-
 @media (max-height: 480px) {
   .wrap-up-summary {
     gap: 0.25rem;

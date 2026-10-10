@@ -49,12 +49,7 @@ const VOICE_DESTINATION_CATEGORY_LABELS: Record<CategoryType, string> = {
   'Entry Point': 'Entry point',
 };
 
-let headingInstanceCounter = 0;
-
-const createHeadingId = (): string => {
-  headingInstanceCounter += 1;
-  return `consult-transfer-popover-heading-${headingInstanceCounter}`;
-};
+const useReactId = (React as typeof React & {useId: () => string}).useId;
 
 const ConsultTransferPopoverComponent: React.FC<ConsultTransferPopoverComponentProps> = ({
   heading,
@@ -78,10 +73,9 @@ const ConsultTransferPopoverComponent: React.FC<ConsultTransferPopoverComponentP
   onClose,
   logger,
 }) => {
-  const headingId = useMemo(createHeadingId, []);
+  const headingId = useReactId();
   const consultTransferPanelRef = useRef<HTMLDivElement | null>(null);
   const summaryFocusedControlRef = useRef<HTMLElement | null>(null);
-  const previousSummaryVisibleRef = useRef(false);
   const summaryVisible = Boolean(summary && summary.state !== 'omitted');
   const {showDialNumberTab = true, showEntryPointTab = true} = consultTransferOptions || {};
   const availableCategories = useMemo(
@@ -125,33 +119,19 @@ const ConsultTransferPopoverComponent: React.FC<ConsultTransferPopoverComponentP
   const isVoiceDestinationLayout = isTelephony && (Boolean(summary) || hasSummaryFocusFallback);
   const panelFocusEnabled = isVoiceDestinationLayout || hasSummaryFocusFallback;
 
-  const clearSummaryFocusSnapshot = () => {
-    summaryFocusedControlRef.current = null;
-  };
-
-  const restoreSummaryRemovalFocus = () => {
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement && activeElement !== document.body && activeElement.isConnected) {
-      clearSummaryFocusSnapshot();
-      return;
-    }
-    const focusedSummaryControl = summaryFocusedControlRef.current;
-    if (focusedSummaryControl && !focusedSummaryControl.isConnected) {
-      consultTransferPanelRef.current?.focus();
-    }
-    clearSummaryFocusSnapshot();
-  };
-
   useLayoutEffect(() => {
     if (summaryVisible && !hasSummaryFocusFallback) {
       setHasSummaryFocusFallback(true);
     }
-    const previousSummaryVisible = previousSummaryVisibleRef.current;
-    previousSummaryVisibleRef.current = summaryVisible;
-    if (previousSummaryVisible && !summaryVisible) {
-      restoreSummaryRemovalFocus();
+    const focusedSummaryControl = summaryFocusedControlRef.current;
+    if (!focusedSummaryControl || focusedSummaryControl.isConnected) return;
+
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement) || activeElement === document.body || !activeElement.isConnected) {
+      consultTransferPanelRef.current?.focus();
     }
-  }, [hasSummaryFocusFallback, summaryVisible]);
+    summaryFocusedControlRef.current = null;
+  });
 
   const handleSummaryFocusCapture = (event: React.FocusEvent<HTMLElement>) => {
     const target = event.target;
@@ -487,15 +467,9 @@ const ConsultTransferPopoverComponent: React.FC<ConsultTransferPopoverComponentP
             {summaryHeading}
           </Text>
           <AISummary
+            {...summary}
             mode="mid-call-initiator"
             state={summary.state}
-            requestPending={summary.requestPending}
-            selectedFeedback={summary.selectedFeedback}
-            content={summary.content}
-            contentRevision={summary.contentRevision}
-            onEdit={summary.onEdit}
-            onCopy={summary.onCopy}
-            onFeedback={summary.onFeedback}
             containingPanelFocusTarget={consultTransferPanelRef}
           />
         </section>

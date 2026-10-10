@@ -872,7 +872,7 @@ describe('ConsultTransferPopoverComponent', () => {
       const heading = view.container.querySelector('.agent-popover-title') as HTMLElement;
 
       expect(popover).toHaveAttribute('tabindex', '-1');
-      expect(heading.id).toMatch(/^consult-transfer-popover-heading-/);
+      expect(heading.id).not.toBe('');
       expect(popover).toHaveAttribute('aria-labelledby', heading.id);
 
       const copy = view.getByRole('button', {name: AI_SUMMARY_MESSAGES.copySummary});

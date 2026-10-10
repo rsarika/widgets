@@ -374,9 +374,11 @@ accepts `onAISummaryStatusChange` as a JavaScript function property, including a
 before element definition, replacement, removal and reconnect. Callback attributes
 remain inert and the property is not reflected into an attribute.
 
-The CallControl adapter forwards that property through React without exposing r2wc's
-container prop. Existing tag names, observed attributes and callback mappings are
-unchanged. The status detail is `{kind, state}` with mid-call availability states and
+The CallControl adapter strips r2wc's container prop. The wrapper uses r2wc's property
+accessors to forward callback changes through React, with no attribute transform or
+separate subscription state. A small subclass validates the function property and
+recovers assignments made before element definition. Existing tag names, observed
+attributes and callback mappings are unchanged. The status detail is `{kind, state}` with mid-call availability states and
 post-call availability/submission states; it contains no summary content.
 
 Evidence: `src/index.ts`, `src/wc.ts`; tests: `tests/wc.ai-summary.ts`.

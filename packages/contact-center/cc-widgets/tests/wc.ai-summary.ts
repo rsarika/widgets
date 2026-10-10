@@ -167,9 +167,8 @@ describe('widget-cc-call-control AI summary status property', () => {
     const first = createStatusCallback();
     const second = createStatusCallback();
 
-    element.onAISummaryStatusChange = first;
-
     await act(async () => {
+      element.onAISummaryStatusChange = first;
       document.body.appendChild(element);
     });
     expect(latestCallControlProps().onAISummaryStatusChange).toBe(first);

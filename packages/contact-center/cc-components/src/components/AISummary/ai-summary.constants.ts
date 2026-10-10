@@ -44,7 +44,7 @@ export const AI_SUMMARY_MESSAGES = {
   },
 } as const;
 
-/** Display order of summary sections; the store keeps only the sections each summary renders. */
+/** Presentation order for SDK sections and the read-only resolution. */
 export const AI_SUMMARY_SECTION_ORDER = [
   'reasonForTransferOrConsult',
   'initialContactReason',
