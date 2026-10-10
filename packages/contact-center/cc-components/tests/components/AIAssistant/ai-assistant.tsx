@@ -14,28 +14,19 @@ jest.mock('@webex/cc-ui-logging', () => ({
 
 jest.mock('../../../src/components/AIAssistant/AdaptiveCardRenderer/adaptive-card-renderer', () => {
   const ReactModule = jest.requireActual<typeof React>('react');
-  const hasActionNode = (value: unknown): boolean => {
-    if (Array.isArray(value)) {
-      return value.some(hasActionNode);
-    }
-    if (!value || typeof value !== 'object') {
-      return false;
-    }
-    const record = value as Record<string, unknown>;
-    return (
-      (typeof record.type === 'string' && (record.type === 'ActionSet' || record.type.startsWith('Action.'))) ||
-      Object.values(record).some(hasActionNode)
-    );
-  };
   return {
     __esModule: true,
     default: ({
       card,
       fallbackText,
+      displayOnly,
+      onRender,
       onUserAction,
     }: {
       card?: unknown;
       fallbackText?: string;
+      displayOnly?: boolean;
+      onRender?: (rendered: boolean) => void;
       onUserAction?: (event: AIAssistantActionEvent) => void;
     }) => {
       const [rendered, setRendered] = ReactModule.useState(
@@ -43,7 +34,10 @@ jest.mock('../../../src/components/AIAssistant/AdaptiveCardRenderer/adaptive-car
       );
       ReactModule.useEffect(() => setRendered(true), [card]);
       const shouldFallback = Boolean((card as {mockFallback?: boolean} | undefined)?.mockFallback);
-      const shouldRenderAction = Boolean(onUserAction || hasActionNode(card));
+      const shouldRenderAction = !displayOnly && Boolean(onUserAction);
+      ReactModule.useEffect(() => {
+        onRender?.(rendered && !shouldFallback);
+      }, [onRender, rendered, shouldFallback]);
       const renderedText =
         typeof (card as {mockRenderedText?: unknown} | undefined)?.mockRenderedText === 'string'
           ? (card as {mockRenderedText: string}).mockRenderedText

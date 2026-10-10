@@ -2,6 +2,7 @@ import React from 'react';
 import {fireEvent, render, screen, waitFor} from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AdaptiveCardRenderer from '../../../src/components/AIAssistant/AdaptiveCardRenderer/adaptive-card-renderer';
+import {extractCardText} from '../../../src/components/AIAssistant/AdaptiveCardRenderer/adaptive-card-renderer.utils';
 
 // Mirrors the real renderer: icons arrive as inline data URIs (no file name to
 // match on) and the payload's empty `title` leaves buttons unlabelled, so the
@@ -165,6 +166,112 @@ describe('AdaptiveCardRenderer', () => {
     await waitFor(() => expect(screen.queryByTestId('ai-assistant:adaptive-card-fallback')).not.toBeInTheDocument());
     expect(await screen.findByLabelText('Like suggestion')).toBeInTheDocument();
   });
+
+  it('renders receiver cards without actions or inputs and preserves their visible text', async () => {
+    // Adaptive Cards writes plain text through innerText, which jsdom does not implement.
+    const innerText = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
+    Object.defineProperty(HTMLElement.prototype, 'innerText', {
+      configurable: true,
+      get() {
+        return this.textContent;
+      },
+      set(value: string) {
+        this.textContent = value;
+      },
+    });
+    try {
+      const adaptiveCards = jest.requireActual<typeof import('adaptivecards')>('adaptivecards');
+      jest.requireMock('adaptivecards').AdaptiveCard.mockImplementationOnce(() => new adaptiveCards.AdaptiveCard());
+      jest
+        .requireMock('adaptivecards')
+        .HostConfig.mockImplementationOnce(
+          (config: ConstructorParameters<typeof adaptiveCards.HostConfig>[0]) => new adaptiveCards.HostConfig(config)
+        );
+      const onRender = jest.fn();
+      const onAction = jest.fn();
+      const onUserAction = jest.fn();
+      const card = {
+        type: 'AdaptiveCard',
+        version: '1.5',
+        selectAction: {type: 'Action.Submit', title: 'Select card'},
+        body: [
+          {type: 'TextBlock', text: 'Receiver summary'},
+          {
+            type: 'Container',
+            selectAction: {type: 'Action.OpenUrl', title: 'Open container', url: 'https://example.com'},
+            items: [
+              {type: 'RichTextBlock', inlines: [{type: 'TextRun', text: 'Next steps'}]},
+              {type: 'FactSet', facts: [{title: 'Outcome', value: 'Resolved'}]},
+              {type: 'Input.Text', id: 'edit', value: 'Hidden input'},
+              {type: 'ActionSet', actions: [{type: 'Action.Submit', title: 'Like'}]},
+            ],
+          },
+        ],
+        actions: [{type: 'Action.Submit', title: 'Copy'}],
+      };
+      const originalCard = JSON.stringify(card);
+      render(
+        <AdaptiveCardRenderer
+          card={card}
+          displayOnly
+          onRender={onRender}
+          onAction={onAction}
+          onUserAction={onUserAction}
+        />
+      );
+
+      expect(await screen.findByText('Receiver summary')).toBeInTheDocument();
+      expect(screen.getByText('Next steps')).toBeInTheDocument();
+      expect(screen.getByText('Outcome')).toBeInTheDocument();
+      expect(screen.getByText('Resolved')).toBeInTheDocument();
+      expect(extractCardText(screen.getByTestId('ai-assistant:adaptive-card'))).toBe(
+        'Receiver summary\nNext steps\nOutcome\nResolved'
+      );
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(onRender).toHaveBeenLastCalledWith(true);
+      expect(onAction).not.toHaveBeenCalled();
+      expect(onUserAction).not.toHaveBeenCalled();
+      expect(JSON.stringify(card)).toBe(originalCard);
+    } finally {
+      if (innerText) {
+        Object.defineProperty(HTMLElement.prototype, 'innerText', innerText);
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).innerText;
+      }
+    }
+  });
+
+  it.each(['parse-error', 'no-output', 'absent-card'] as const)(
+    'reports a receiver render failure for %s',
+    async (failure) => {
+      if (failure !== 'absent-card') {
+        jest.requireMock('adaptivecards').AdaptiveCard.mockImplementationOnce(() => ({
+          parse: jest.fn(() => {
+            if (failure === 'parse-error') throw new Error('Malformed card');
+          }),
+          render: jest.fn(() => undefined),
+          getAllActions: jest.fn(() => []),
+        }));
+      }
+      const onRender = jest.fn();
+      render(
+        <AdaptiveCardRenderer
+          card={failure === 'absent-card' ? undefined : {type: 'AdaptiveCard'}}
+          displayOnly
+          onRender={onRender}
+          fallbackText="The summary is not available"
+        />
+      );
+
+      await waitFor(() => expect(onRender).toHaveBeenLastCalledWith(false));
+      if (failure !== 'absent-card') {
+        expect(screen.getByTestId('ai-assistant:adaptive-card-fallback')).toHaveTextContent(
+          'The summary is not available'
+        );
+      }
+    }
+  );
 
   it('uses the bordered quote treatment for customer statements', () => {
     render(<AdaptiveCardRenderer card={{type: 'AdaptiveCard'}} assistantTitle="The customer said:" />);

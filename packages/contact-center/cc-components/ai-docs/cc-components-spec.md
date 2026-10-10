@@ -369,29 +369,31 @@ store entry. Generating and error states accept absent content so widgets can pa
 the store value directly without constructing an empty SDK payload. Component tests
 use that same SDK shape. Receiver rendering and focus
 handlers live in the assistant component alongside its chrome and summary branch.
-
-CallControl's optional `aiSummary` prop contains the views and request callbacks.
-For SDK-enabled tasks, opening consult/transfer requests a summary and renders
-destination radios with the summary below the existing results. That layout stays
-stable while the open popover loses summary eligibility; tasks without summary
-eligibility retain the existing category buttons, reload control and list layout.
-`WrapUpSummary` shows searchable reasons and the post-call summary. Complete Wrap-Up
-remains available during generation; while completion is pending, summary edits and
-completion are disabled. The existing wrap-up form keeps its previous submission behavior.
+The mode-specific prop union separates editable summaries from receiver actions and
+requires callbacks only when receiver content is available. Section ordering,
+labels, plain-text clipboard formatting, bullet presentation and auto-sizing native
+editors belong to this component; edits, copy counts, feedback and submission belong
+to the store's actions and separate SDK response record.
 
 `AIAssistantComponent.receiverSummary` adds View summary to closed/minimized chrome
 and opens the receiver branch independently of Real-time Assist enablement. Copy uses
-visible card text; card actions remain inert. The receiver content revision resets
-its renderer's error boundary when replacement content arrives. Summary components recover focus when a focused
-summary control or branch is removed and no connected control has taken focus.
+rendered card text through the existing Adaptive Card text extractor. The renderer
+uses Adaptive Cards' `supportsInteractivity: false` for receiver content, keeping
+card-provided actions, select actions and inputs inert without rewriting the SDK
+card. Its render callback controls whether the separate copy/feedback controls are
+shown; parsing or rendering failure hides them. Valid replacement cards preserve
+those controls and their focus. The receiver content revision resets the renderer's
+error boundary when replacement content arrives. Summary components recover focus
+when a focused summary control or branch is removed and no connected control has
+taken focus.
 
 These components receive data and callbacks through props and make no SDK calls.
 `AISummary` remains internal; it is not exported by the package's root React barrel.
 
-Evidence: `components/AISummary/`, `components/AIAssistant/`, and
-`components/task/CallControl/`; tests: the corresponding `tests/components/` suites,
-including `AISummary/ai-summary.tsx`, `AIAssistant/ai-assistant.tsx`,
-`CallControl/call-control.tsx`, `consult-transfer-popover.tsx`, and `wrap-up-summary.tsx`.
+Evidence: `components/AISummary/` and `components/AIAssistant/`; tests:
+`tests/components/AISummary/ai-summary.tsx`,
+`tests/components/AIAssistant/ai-assistant.tsx`, and
+`tests/components/AIAssistant/adaptive-card-renderer.test.tsx`.
 
 ## Traceability
 

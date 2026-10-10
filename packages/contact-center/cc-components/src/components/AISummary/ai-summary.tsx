@@ -43,12 +43,8 @@ const flattenContentForCopy = (content: NonNullable<AISummaryEntry['content']>):
     .join('\n\n');
 };
 
-const splitDisplayLines = (value: string): string[] => value.split('\n').filter((line) => line.trim().length > 0);
-
-const stripBulletMarker = (line: string): string => line.trim().replace(/^(?:\u2022|[-*])\s*/, '');
-
 const renderReadonlyValue = (section: DisplaySection, inline = false) => {
-  const lines = splitDisplayLines(section.value);
+  const lines = section.value.split('\n').filter((line) => line.trim().length > 0);
   if (BULLETED_SECTION_KEYS.has(section.key) && lines.length > 1) {
     const List = inline ? 'span' : 'ul';
     const Item = inline ? 'span' : 'li';
@@ -56,7 +52,7 @@ const renderReadonlyValue = (section: DisplaySection, inline = false) => {
       <List className="ai-summary__readonly-list" role={inline ? 'list' : undefined} dir="auto">
         {lines.map((line, index) => (
           <Item key={`${section.key}-${index}`} role={inline ? 'listitem' : undefined} dir="auto">
-            {stripBulletMarker(line)}
+            {line.trim().replace(/^(?:\u2022|[-*])\s*/, '')}
           </Item>
         ))}
       </List>
@@ -169,7 +165,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
   const [, scheduleFocusRestoration] = useState(0);
   const feedbackDescriptionId = `ai-summary-feedback-${useReactId()}`;
 
-  const contentRevision = 'contentRevision' in props ? props.contentRevision : undefined;
+  const contentRevision = props.contentRevision;
   const disabled = Boolean(props.controlsDisabled || props.requestPending);
   const selectedFeedback = props.selectedFeedback ?? 'none';
 
@@ -232,16 +228,6 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     clearFocusSnapshot();
   });
 
-  const copyText = () => {
-    if (props.mode === 'mid-call-receiver' && props.state === 'content') {
-      return props.getReceiverCopyText();
-    }
-    if (props.mode === 'mid-call-receiver') {
-      return '';
-    }
-    return props.content ? flattenContentForCopy(props.content) : '';
-  };
-
   const handleFocusCapture = (event: React.FocusEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
@@ -250,8 +236,7 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
     const controls = rootRef.current ? getEnabledControls(rootRef.current) : [];
     const index = controls.indexOf(target);
     focusedControlRef.current = target;
-    successorRef.current =
-      index >= 0 ? (controls.slice(index + 1).find((control) => control !== target) ?? null) : null;
+    successorRef.current = index >= 0 ? (controls[index + 1] ?? null) : null;
   };
 
   const handleBlurCapture = (event: React.FocusEvent<HTMLDivElement>) => {
@@ -269,13 +254,18 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
   };
 
   const handleCopy = async () => {
-    if (disabled || contentRevision === undefined) {
+    if (disabled || props.state !== 'content') {
       return;
     }
     setHoveredTooltip(null);
     setCopied(false);
     try {
-      const text = copyText();
+      const text =
+        props.mode === 'mid-call-receiver'
+          ? props.getReceiverCopyText()
+          : props.content
+            ? flattenContentForCopy(props.content)
+            : '';
       if (text.trim().length === 0) {
         return;
       }
@@ -285,18 +275,12 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
       return;
     }
     // The store rejects the copy when a newer summary replaced this one meanwhile.
-    setCopied(props.onCopy(contentRevision));
+    setCopied(props.onCopy(props.contentRevision));
   };
 
   const handleFeedback = (feedback: Exclude<AISummaryFeedback, 'none'>) => {
-    if (!disabled && contentRevision !== undefined) {
-      props.onFeedback?.(feedback, contentRevision);
-    }
-  };
-
-  const handleRetry = () => {
-    if (props.mode === 'post-call' && !disabled) {
-      void props.onRetry();
+    if (!disabled && props.state === 'content') {
+      props.onFeedback(feedback, props.contentRevision);
     }
   };
 
@@ -328,7 +312,12 @@ const AISummary = (props: AISummaryProps): React.ReactElement => {
           </h3>
           <p className="ai-summary__description">{AI_SUMMARY_MESSAGES.generationErrorDescription}</p>
           {props.mode === 'post-call' ? (
-            <button className="ai-summary__button" type="button" disabled={disabled} onClick={handleRetry}>
+            <button
+              className="ai-summary__button"
+              type="button"
+              disabled={disabled}
+              onClick={() => void props.onRetry()}
+            >
               <Icon name="refresh-regular" aria-hidden="true" />
               {AI_SUMMARY_MESSAGES.retry}
             </button>
